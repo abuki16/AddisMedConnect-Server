@@ -1,0 +1,15 @@
+# .NET Core / Visual Studio
+[Bb]in/
+[Oo]bj/
+.vs/
+*.user
+*.suo
+*.userprefs
+appsettings.Development.json
+*.db
+*.db-shm
+*.db-wal
+
+# OS generated files
+.DS_Store
+Thumbs.db
