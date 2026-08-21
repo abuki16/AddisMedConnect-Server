@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="AddisMedConnect.Api/AddisMedConnect.Api.csproj" />
+  <Project Path="AddisMedConnect.Application/AddisMedConnect.Application.csproj" />
+  <Project Path="AddisMedConnect.Domain/AddisMedConnect.Domain.csproj" />
+  <Project Path="AddisMedConnect.Infrastructure/AddisMedConnect.Infrastructure.csproj" />
+</Solution>

@@ -1,0 +1,39 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "AddisMedConnect.Application/1.0.0": {
+        "dependencies": {
+          "AddisMedConnect.Domain": "1.0.0"
+        },
+        "runtime": {
+          "AddisMedConnect.Application.dll": {}
+        }
+      },
+      "AddisMedConnect.Domain/1.0.0": {
+        "runtime": {
+          "AddisMedConnect.Domain.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "AddisMedConnect.Application/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "AddisMedConnect.Domain/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}
