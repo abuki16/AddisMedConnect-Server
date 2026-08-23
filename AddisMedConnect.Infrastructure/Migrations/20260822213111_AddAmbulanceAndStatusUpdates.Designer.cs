@@ -3,6 +3,7 @@ using System;
 using AddisMedConnect.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AddisMedConnect.Infrastructure.Migrations
 {
     [DbContext(typeof(AddisDbContext))]
-    partial class AddisDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260822213111_AddAmbulanceAndStatusUpdates")]
+    partial class AddAmbulanceAndStatusUpdates
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -61,12 +64,8 @@ namespace AddisMedConnect.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("CurrentCaseId")
-                        .HasColumnType("text");
+                    b.Property<Guid?>("CurrentCaseId")
+                        .HasColumnType("uuid");
 
                     b.Property<Guid>("HospitalId")
                         .HasColumnType("uuid");
@@ -93,8 +92,9 @@ namespace AddisMedConnect.Infrastructure.Migrations
 
             modelBuilder.Entity("AddisMedConnect.Domain.Entities.EmergencyCase", b =>
                 {
-                    b.Property<string>("IncidentNumber")
-                        .HasColumnType("text");
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
 
                     b.Property<Guid?>("AssignedAmbulanceId")
                         .HasColumnType("uuid");
@@ -102,13 +102,17 @@ namespace AddisMedConnect.Infrastructure.Migrations
                     b.Property<Guid?>("AssignedBedId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("ChiefComplaint")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("IncidentReason")
+                    b.Property<string>("IncidentNumber")
                         .IsRequired()
                         .HasColumnType("text");
 
@@ -134,7 +138,7 @@ namespace AddisMedConnect.Infrastructure.Migrations
                     b.Property<Guid>("TargetHospitalId")
                         .HasColumnType("uuid");
 
-                    b.HasKey("IncidentNumber");
+                    b.HasKey("Id");
 
                     b.HasIndex("AssignedAmbulanceId");
 
@@ -150,10 +154,6 @@ namespace AddisMedConnect.Infrastructure.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<string>("Address")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Code")
                         .IsRequired()
                         .HasColumnType("text");
 

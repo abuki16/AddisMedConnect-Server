@@ -1,6 +1,6 @@
-@AddisMedConnect.Api_HostAddress = http://localhost:5057
+@Host = http://localhost:5057
 
-GET {{AddisMedConnect.Api_HostAddress}}/weatherforecast/
+GET {{Host}}/api/hospitals
 Accept: application/json
 
 ###

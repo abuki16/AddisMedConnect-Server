@@ -67,6 +67,27 @@ public class HospitalService : IHospitalService
             .ToListAsync();
     }
 
+    public async Task<IEnumerable<HospitalAvailabilityDto>> GetAvailableBedsAsync()
+    {
+        var hospitals = await _context.Hospitals
+            .Include(h => h.Beds.Where(b => b.Status == BedStatus.Available))
+            .ToListAsync();
+
+        return hospitals.Select(h => new HospitalAvailabilityDto(
+            h.Id,
+            h.Name,
+            h.SubCity,
+            h.Beds.Select(b => new BedDto(
+                b.Id,
+                b.BedNumber,
+                b.WardType,
+                b.Status.ToString(),
+                b.HospitalId,
+                b.LastStatusUpdate
+            )).ToList()
+        ));
+    }
+
     public async Task<bool> UpdateBedStatusAsync(Guid bedId, int status)
     {
         var bed = await _context.Beds.FindAsync(bedId);

@@ -9,3 +9,4 @@ C:\Users\khadi\AddisMedConnect\AddisMedConnect.Domain\obj\Debug\net10.0\AddisMed
 C:\Users\khadi\AddisMedConnect\AddisMedConnect.Domain\obj\Debug\net10.0\refint\AddisMedConnect.Domain.dll
 C:\Users\khadi\AddisMedConnect\AddisMedConnect.Domain\obj\Debug\net10.0\AddisMedConnect.Domain.pdb
 C:\Users\khadi\AddisMedConnect\AddisMedConnect.Domain\obj\Debug\net10.0\ref\AddisMedConnect.Domain.dll
+C:\Users\khadi\AddisMedConnect\AddisMedConnect.Domain\obj\Debug\net10.0\AddisMedConnect.Domain.sourcelink.json

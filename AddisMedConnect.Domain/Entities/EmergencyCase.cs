@@ -1,13 +1,15 @@
+using System.ComponentModel.DataAnnotations;
 using AddisMedConnect.Domain.Enums;
 
 namespace AddisMedConnect.Domain.Entities;
 
 public class EmergencyCase
 {
-    public Guid Id { get; set; } = Guid.NewGuid();
-    public string IncidentNumber { get; set; } = string.Empty;
+    [Key]
+    public string IncidentNumber { get; set; } = string.Empty; // Acts as the primary key
+
     public string PatientName { get; set; } = string.Empty;
-    public string ChiefComplaint { get; set; } = string.Empty;
+    public string IncidentReason { get; set; } = string.Empty; // Updated from ChiefComplaint
     public CaseStatus Status { get; set; } = CaseStatus.PendingDispatch;
     public TriagePriority Priority { get; set; } = TriagePriority.Yellow;
 

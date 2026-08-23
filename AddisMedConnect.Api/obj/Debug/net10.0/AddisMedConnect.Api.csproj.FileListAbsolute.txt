@@ -184,3 +184,4 @@ C:\Users\khadi\AddisMedConnect\AddisMedConnect.Api\obj\Debug\net10.0\refint\Addi
 C:\Users\khadi\AddisMedConnect\AddisMedConnect.Api\obj\Debug\net10.0\AddisMedConnect.Api.pdb
 C:\Users\khadi\AddisMedConnect\AddisMedConnect.Api\obj\Debug\net10.0\AddisMedConnect.Api.genruntimeconfig.cache
 C:\Users\khadi\AddisMedConnect\AddisMedConnect.Api\obj\Debug\net10.0\ref\AddisMedConnect.Api.dll
+C:\Users\khadi\AddisMedConnect\AddisMedConnect.Api\obj\Debug\net10.0\AddisMedConnect.Api.sourcelink.json
