@@ -3,6 +3,7 @@ using System;
 using AddisMedConnect.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AddisMedConnect.Infrastructure.Migrations
 {
     [DbContext(typeof(AddisDbContext))]
-    partial class AddisDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260824142349_AddCallerDetailsToEmergencyCase")]
+    partial class AddCallerDetailsToEmergencyCase
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -21,6 +24,35 @@ namespace AddisMedConnect.Infrastructure.Migrations
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+
+            modelBuilder.Entity("AddisMedConnect.Domain.Entities.Ambulance", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("AssignedDriverId")
+                        .HasColumnType("uuid");
+
+                    b.Property<double?>("CurrentLatitude")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("CurrentLongitude")
+                        .HasColumnType("double precision");
+
+                    b.Property<bool>("IsAvailable")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("PlateNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssignedDriverId");
+
+                    b.ToTable("Ambulances");
+                });
 
             modelBuilder.Entity("AddisMedConnect.Domain.Entities.Bed", b =>
                 {
@@ -200,34 +232,13 @@ namespace AddisMedConnect.Infrastructure.Migrations
                     b.ToTable("Users");
                 });
 
-            modelBuilder.Entity("Ambulance", b =>
+            modelBuilder.Entity("AddisMedConnect.Domain.Entities.Ambulance", b =>
                 {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                    b.HasOne("AddisMedConnect.Domain.Entities.User", "AssignedDriver")
+                        .WithMany()
+                        .HasForeignKey("AssignedDriverId");
 
-                    b.Property<double?>("CurrentLatitude")
-                        .HasColumnType("double precision");
-
-                    b.Property<double?>("CurrentLongitude")
-                        .HasColumnType("double precision");
-
-                    b.Property<string>("DriverName")
-                        .HasColumnType("text");
-
-                    b.Property<bool>("IsAvailable")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("PhoneNumber")
-                        .HasColumnType("text");
-
-                    b.Property<string>("PlateNumber")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("Ambulances");
+                    b.Navigation("AssignedDriver");
                 });
 
             modelBuilder.Entity("AddisMedConnect.Domain.Entities.Bed", b =>
@@ -250,7 +261,7 @@ namespace AddisMedConnect.Infrastructure.Migrations
 
             modelBuilder.Entity("AddisMedConnect.Domain.Entities.EmergencyCase", b =>
                 {
-                    b.HasOne("Ambulance", "AssignedAmbulance")
+                    b.HasOne("AddisMedConnect.Domain.Entities.Ambulance", "AssignedAmbulance")
                         .WithMany()
                         .HasForeignKey("AssignedAmbulanceId");
 

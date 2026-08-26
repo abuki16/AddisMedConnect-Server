@@ -3,9 +3,11 @@ namespace AddisMedConnect.Domain.Enums;
 public enum CaseStatus
 {
     PendingDispatch = 0,
-    Dispatched = 1,
-    InTransit = 2,
-    ArrivedAtTriage = 3,
-    Resolved = 4,
-    Cancelled = 5
+    PendingTriage = 1,
+    Dispatched = 2,
+    InTransit = 3,
+    ArrivedAtTriage = 4,
+    Admitted = 5,       // <-- Add this missing state
+    Resolved = 6,       // Shift subsequent values accordingly
+    Cancelled = 7
 }

@@ -8,8 +8,12 @@ public class EmergencyCase
     [Key]
     public string IncidentNumber { get; set; } = string.Empty; // Acts as the primary key
 
+    // Caller Information
+    public string CallerName { get; set; } = string.Empty;
+    public string CallerPhone { get; set; } = string.Empty;
+
     public string PatientName { get; set; } = string.Empty;
-    public string IncidentReason { get; set; } = string.Empty; // Updated from ChiefComplaint
+    public string IncidentReason { get; set; } = string.Empty; 
     public CaseStatus Status { get; set; } = CaseStatus.PendingDispatch;
     public TriagePriority Priority { get; set; } = TriagePriority.Yellow;
 

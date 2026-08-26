@@ -4,6 +4,12 @@ namespace AddisMedConnect.Application.DTOs;
 
 public class CreateEmergencyCaseDto
 {
+    [Required(ErrorMessage = "Caller name is required.")]
+    public string CallerName { get; set; } = string.Empty;
+
+    [Required(ErrorMessage = "Caller phone number is required.")]
+    public string CallerPhone { get; set; } = string.Empty;
+
     [Required(ErrorMessage = "Patient name is required.")]
     public string PatientName { get; set; } = string.Empty;
 

@@ -18,7 +18,7 @@ public class HospitalsController : ControllerBase
 
     [HttpGet]
     [ProducesResponseType(typeof(IEnumerable<HospitalDto>), StatusCodes.Status200OK)]
-    [EndpointSummary("Retrieve all registered hospitals")]
+    [EndpointSummary("Retrieve all registered hospitals with dynamic capacities")]
     public async Task<ActionResult<IEnumerable<HospitalDto>>> GetHospitals()
     {
         var hospitals = await _hospitalService.GetAllHospitalsAsync();

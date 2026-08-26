@@ -3,6 +3,7 @@ using System;
 using AddisMedConnect.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AddisMedConnect.Infrastructure.Migrations
 {
     [DbContext(typeof(AddisDbContext))]
-    partial class AddisDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260824184944_UpdateAmbulanceModel")]
+    partial class UpdateAmbulanceModel
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -205,12 +208,6 @@ namespace AddisMedConnect.Infrastructure.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
-
-                    b.Property<double?>("CurrentLatitude")
-                        .HasColumnType("double precision");
-
-                    b.Property<double?>("CurrentLongitude")
-                        .HasColumnType("double precision");
 
                     b.Property<string>("DriverName")
                         .HasColumnType("text");

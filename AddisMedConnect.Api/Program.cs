@@ -4,12 +4,15 @@ using AddisMedConnect.Infrastructure.Persistence;
 using AddisMedConnect.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// 1. Database Configuration
 builder.Services.AddDbContext<AddisDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+// 2. CORS Configuration (Allows credentials for headers/cookies)
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowClient", policy =>
@@ -21,34 +24,50 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Register SignalR & Services cleanly
+// 3. Register SignalR & Business Services
 builder.Services.AddSignalR();
 builder.Services.AddScoped<IBedNotificationService, BedNotificationService>();
 builder.Services.AddScoped<IHospitalService, HospitalService>();
 builder.Services.AddScoped<IEmergencyService, EmergencyService>();
+builder.Services.AddScoped<IBedService, BedService>();
 
-builder.Services.AddControllers();
+// 4. Controllers, Reference Loop Handling, & Enum String Conversion
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
+
 builder.Services.AddOpenApi();
 
-var app = builder.Build();
+var builderApp = builder.Build();
 
-using (var scope = app.Services.CreateScope())
+// 5. Database Initialization / Seeding
+using (var scope = builderApp.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<AddisDbContext>();
     await DbInitializer.SeedAsync(context);
 }
 
-if (app.Environment.IsDevelopment())
+if (builderApp.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
-    app.MapScalarApiReference(); // Adds Scalar UI at /scalar/v1
+    builderApp.MapOpenApi();
+    builderApp.MapScalarApiReference(); // Adds Scalar UI at /scalar/v1
 }
 
-app.UseHttpsRedirection();
-app.UseCors("AllowClient");
-app.UseAuthorization();
+builderApp.UseHttpsRedirection();
 
-app.MapControllers();
-app.MapHub<BedHub>("/hubs/beds");
+// 6. Middleware Pipeline (Must include UseRouting before UseCors & MapEndpoints)
+builderApp.UseRouting();
 
-app.Run();
+builderApp.UseCors("AllowClient");
+
+builderApp.UseAuthorization();
+
+// 7. Endpoint Mappings
+builderApp.MapControllers();
+builderApp.MapHub<BedHub>("/hubs/beds").RequireCors("AllowClient");
+builderApp.MapHub<EmergencyHub>("/hubs/emergency").RequireCors("AllowClient");
+
+builderApp.Run();
