@@ -18,25 +18,25 @@ public class BedsController : ControllerBase
     {
         _bedService = bedService;
     }
-     // POST: api/beds
-[HttpPost]
-[Authorize(Roles = "SystemAdmin,DischargeClerk")]
-[ProducesResponseType(typeof(Bed), StatusCodes.Status201Created)]
-[ProducesResponseType(StatusCodes.Status400BadRequest)]
-[ProducesResponseType(StatusCodes.Status404NotFound)]
-[EndpointSummary("Create a new bed for a specific hospital")]
-public async Task<ActionResult<Bed>> CreateBed([FromBody] CreateBedDto dto)
-{
-    try
+    // POST: api/beds
+    [HttpPost]
+    [Authorize(Roles = "SystemAdmin,DischargeClerk")]
+    [ProducesResponseType(typeof(Bed), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [EndpointSummary("Create a new bed for a specific hospital")]
+    public async Task<ActionResult<Bed>> CreateBed([FromBody] CreateBedDto dto)
     {
-        var createdBed = await _bedService.CreateBedAsync(dto);
-        return CreatedAtAction(nameof(GetBedsByHospital), new { hospitalId = createdBed.HospitalId }, createdBed);
+        try
+        {
+            var createdBed = await _bedService.CreateBedAsync(dto);
+            return CreatedAtAction(nameof(GetBedsByHospital), new { hospitalId = createdBed.HospitalId }, createdBed);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
     }
-    catch (KeyNotFoundException ex)
-    {
-        return NotFound(new { message = ex.Message });
-    }
-}
     // GET: api/beds
     [HttpGet]
     [ProducesResponseType(typeof(IEnumerable<Bed>), StatusCodes.Status200OK)]

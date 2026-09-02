@@ -118,9 +118,16 @@ public class EmergencyCasesController : ControllerBase
         var emergencyCase = await _emergencyService.GetCaseByIncidentNumberAsync(incidentNumber);
         if (emergencyCase is null) return NotFound();
         if (!CanAccessHospital(emergencyCase.TargetHospitalId)) return Forbid();
-        var success = await _emergencyService.CompleteTriageAsync(incidentNumber, dto);
-        if (!success) return NotFound();
-        return NoContent();
+        try
+        {
+            var success = await _emergencyService.CompleteTriageAsync(incidentNumber, dto);
+            if (!success) return Conflict(new { message = "Only dispatched cases can be admitted through triage." });
+            return NoContent();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
     }
 
     [HttpPost("{incidentNumber}/discharge")]
@@ -141,9 +148,9 @@ public class EmergencyCasesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     [EndpointSummary("Check hospital bed capacity and recommend nearest alternative if full")]
     public async Task<IActionResult> CheckCapacity(
-        [FromQuery] Guid hospitalId, 
-        [FromQuery] string wardType, 
-        [FromQuery] double lat, 
+        [FromQuery] Guid hospitalId,
+        [FromQuery] string wardType,
+        [FromQuery] double lat,
         [FromQuery] double lng)
     {
         var result = await _emergencyService.CheckCapacityAndFindAlternativeAsync(hospitalId, wardType, lat, lng);

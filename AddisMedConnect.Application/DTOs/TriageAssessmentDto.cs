@@ -4,5 +4,5 @@ namespace AddisMedConnect.Application.DTOs;
 
 public record TriageAssessmentDto(
     TriagePriority Priority,
-    Guid ConfirmedBedId
+    Guid? ConfirmedBedId
 );

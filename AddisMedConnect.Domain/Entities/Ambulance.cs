@@ -10,7 +10,7 @@ public class Ambulance
     public User? DriverUser { get; set; }
     public string? PhoneNumber { get; set; }                // Optional
     public bool IsAvailable { get; set; } = true;
-    
+
     // Location tracking for proximity dispatch
     public double? CurrentLatitude { get; set; }
     public double? CurrentLongitude { get; set; }

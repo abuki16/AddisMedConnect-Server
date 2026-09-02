@@ -75,7 +75,7 @@ public class EmergencyService : IEmergencyService
             .Include(ec => ec.TargetHospital)
             .Include(ec => ec.AssignedBed)
             .Include(ec => ec.AssignedAmbulance)
-            .Where(ec => ec.TargetHospitalId == hospitalId && 
+            .Where(ec => ec.TargetHospitalId == hospitalId &&
                          (ec.Status == CaseStatus.Dispatched || ec.Status == CaseStatus.Admitted))
             .Select(ec => new EmergencyCaseDto(
                 ec.IncidentNumber,
@@ -180,7 +180,7 @@ public class EmergencyService : IEmergencyService
                 throw new KeyNotFoundException($"Bed with identifier '{dto.AssignedBedId}' was not found in hospital '{hospital.Name}'.");
             }
 
-            bed.Status = BedStatus.Reserved; 
+            bed.Status = BedStatus.Reserved;
             bed.LastStatusUpdate = DateTime.UtcNow;
             resolvedBedGuid = bed.Id;
         }
@@ -197,8 +197,8 @@ public class EmergencyService : IEmergencyService
             if (ambulance == null)
             {
                 ambulance = await _context.Ambulances
-                    .FirstOrDefaultAsync(a => 
-                        a.PlateNumber.ToLower() == dto.AssignedAmbulanceId.ToLower() || 
+                    .FirstOrDefaultAsync(a =>
+                        a.PlateNumber.ToLower() == dto.AssignedAmbulanceId.ToLower() ||
                         a.PlateNumber.ToLower().Contains(dto.AssignedAmbulanceId.ToLower()));
             }
 
@@ -219,10 +219,10 @@ public class EmergencyService : IEmergencyService
             CallerPhone = string.IsNullOrWhiteSpace(dto.CallerPhone) ? "N/A" : dto.CallerPhone,
             PatientName = string.IsNullOrWhiteSpace(dto.PatientName) ? "Unknown Patient" : dto.PatientName,
             IncidentReason = dto.IncidentReason,
-            Priority = TriagePriority.Yellow, 
-            TargetHospitalId = hospital.Id,   
-            AssignedBedId = resolvedBedGuid,  
-            AssignedAmbulanceId = resolvedAmbulanceGuid, 
+            Priority = TriagePriority.Yellow,
+            TargetHospitalId = hospital.Id,
+            AssignedBedId = resolvedBedGuid,
+            AssignedAmbulanceId = resolvedAmbulanceGuid,
             Status = CaseStatus.Dispatched,
             PickupAddress = dto.PickupAddress,
             PickupLatitude = dto.PickupLatitude,
@@ -233,7 +233,7 @@ public class EmergencyService : IEmergencyService
         _context.EmergencyCases.Add(entity);
         await _context.SaveChangesAsync();
 
-        return await GetCaseByIncidentNumberAsync(entity.IncidentNumber) 
+        return await GetCaseByIncidentNumberAsync(entity.IncidentNumber)
                ?? throw new InvalidOperationException("Failed to create emergency case.");
     }
 
@@ -254,7 +254,7 @@ public class EmergencyService : IEmergencyService
 
             if (ec.AssignedBed != null)
             {
-                ec.AssignedBed.Status = BedStatus.Available; 
+                ec.AssignedBed.Status = BedStatus.Available;
                 ec.AssignedBed.LastStatusUpdate = DateTime.UtcNow;
                 ec.AssignedBed.CurrentCaseId = null;
                 ec.AssignedBedId = null;
@@ -278,12 +278,12 @@ public class EmergencyService : IEmergencyService
                 .ThenInclude(b => b!.Hospital)
             .FirstOrDefaultAsync(x => x.IncidentNumber == incidentNumber);
 
-        if (ec == null) return false;
+        if (ec == null || ec.Status != CaseStatus.Dispatched) return false;
 
         ec.Priority = dto.Priority;
         ec.Status = CaseStatus.Admitted;
 
-        if (dto.ConfirmedBedId != Guid.Empty && ec.AssignedBedId != dto.ConfirmedBedId)
+        if (dto.ConfirmedBedId is not null && ec.AssignedBedId != dto.ConfirmedBedId)
         {
             if (ec.AssignedBed != null)
             {
@@ -293,14 +293,14 @@ public class EmergencyService : IEmergencyService
 
             var newBed = await _context.Beds
                 .Include(b => b.Hospital)
-                .FirstOrDefaultAsync(b => b.Id == dto.ConfirmedBedId);
+                .FirstOrDefaultAsync(b => b.Id == dto.ConfirmedBedId && b.HospitalId == ec.TargetHospitalId);
 
-            if (newBed != null)
-            {
-                newBed.Status = BedStatus.Occupied;
-                newBed.LastStatusUpdate = DateTime.UtcNow;
-                newBed.CurrentCaseId = incidentNumber;
-            }
+            if (newBed == null || newBed.Status != BedStatus.Available)
+                throw new InvalidOperationException("The selected bed is no longer available at this hospital.");
+
+            newBed.Status = BedStatus.Occupied;
+            newBed.LastStatusUpdate = DateTime.UtcNow;
+            newBed.CurrentCaseId = incidentNumber;
 
             ec.AssignedBedId = dto.ConfirmedBedId;
         }
@@ -314,7 +314,23 @@ public class EmergencyService : IEmergencyService
         if (ec.AssignedAmbulanceId is not null)
         {
             var ambulance = await _context.Ambulances.FindAsync(ec.AssignedAmbulanceId);
-            if (ambulance is not null) ambulance.IsAvailable = true;
+            if (ambulance is not null)
+            {
+                ambulance.IsAvailable = true;
+
+                // Preserve the last known drop-off point as an auditable release event.
+                if (ambulance.CurrentLatitude is not null && ambulance.CurrentLongitude is not null)
+                {
+                    _context.AmbulanceLocations.Add(new AmbulanceLocation
+                    {
+                        AmbulanceId = ambulance.Id,
+                        Latitude = ambulance.CurrentLatitude.Value,
+                        Longitude = ambulance.CurrentLongitude.Value,
+                        AddressLabel = "Released after hospital arrival",
+                        IncidentNumber = ec.IncidentNumber
+                    });
+                }
+            }
             ec.AssignedAmbulanceId = null;
         }
 
@@ -329,10 +345,10 @@ public class EmergencyService : IEmergencyService
 
         if (freeBedsCount > 0)
         {
-            return new HospitalCapacityResultDto 
-            { 
-                IsAvailable = true, 
-                Message = "Beds are available at the requested hospital." 
+            return new HospitalCapacityResultDto
+            {
+                IsAvailable = true,
+                Message = "Beds are available at the requested hospital."
             };
         }
 
@@ -406,7 +422,7 @@ public class EmergencyService : IEmergencyService
             var oldBed = await _context.Beds
                 .Include(b => b.Hospital)
                 .FirstOrDefaultAsync(b => b.Id == emergencyCase.AssignedBedId.Value);
-                
+
             if (oldBed != null)
             {
                 oldBed.Status = BedStatus.Available;
@@ -418,10 +434,10 @@ public class EmergencyService : IEmergencyService
         var bed = await _context.Beds
             .Include(b => b.Hospital)
             .FirstOrDefaultAsync(b => b.Id == bedId);
-        
+
         if (bed == null || (bed.Status != BedStatus.Available && emergencyCase.AssignedBedId != bedId))
             throw new InvalidOperationException("Selected bed is unavailable or does not exist.");
-        
+
         bed.Status = BedStatus.Reserved;
         bed.CurrentCaseId = incidentNumber;
         bed.LastStatusUpdate = DateTime.UtcNow;
@@ -432,9 +448,9 @@ public class EmergencyService : IEmergencyService
 
         var isAmbulanceBusy = await _context.EmergencyCases
             .AnyAsync(ec => ec.AssignedAmbulanceId == ambulanceId && ec.IncidentNumber != incidentNumber && ec.Status != CaseStatus.Resolved && ec.Status != CaseStatus.Cancelled);
-        
+
         if (isAmbulanceBusy)
-           throw new InvalidOperationException("Selected ambulance is currently assigned to another active case.");
+            throw new InvalidOperationException("Selected ambulance is currently assigned to another active case.");
 
         emergencyCase.AssignedBedId = bedId;
         emergencyCase.AssignedAmbulanceId = ambulanceId;

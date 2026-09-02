@@ -13,7 +13,7 @@ public class EmergencyCase
     public string CallerPhone { get; set; } = string.Empty;
 
     public string PatientName { get; set; } = string.Empty;
-    public string IncidentReason { get; set; } = string.Empty; 
+    public string IncidentReason { get; set; } = string.Empty;
     public CaseStatus Status { get; set; } = CaseStatus.PendingDispatch;
     public TriagePriority Priority { get; set; } = TriagePriority.Yellow;
 

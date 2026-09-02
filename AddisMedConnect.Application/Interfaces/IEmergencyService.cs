@@ -13,10 +13,10 @@ public interface IEmergencyService
     Task<EmergencyCaseDto> CreateCaseAsync(CreateEmergencyCaseDto dto);
     Task<bool> UpdateCaseStatusAsync(string incidentNumber, CaseStatus status);
     Task<bool> CompleteTriageAsync(string incidentNumber, TriageAssessmentDto dto);
-    
+
     Task<int> GetPendingTriageCountAsync();
     Task<int> GetPendingTriageCountByHospitalAsync(Guid hospitalId);
-    
+
     Task<HospitalCapacityResultDto> CheckCapacityAndFindAlternativeAsync(Guid hospitalId, string wardType, double currentLat, double currentLng);
     Task<IEnumerable<HospitalRecommendationDto>> FindRecommendedHospitalsAsync(string wardType, double latitude, double longitude);
     Task<List<Ambulance>> GetAvailableAmbulancesAsync();

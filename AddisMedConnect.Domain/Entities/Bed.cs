@@ -9,7 +9,7 @@ public class Bed
     public string BedNumber { get; set; } = string.Empty;
     public string WardType { get; set; } = string.Empty;
     public BedStatus Status { get; set; } = BedStatus.Available;
-    
+
     public Guid HospitalId { get; set; }
     public Hospital Hospital { get; set; } = null!;
 

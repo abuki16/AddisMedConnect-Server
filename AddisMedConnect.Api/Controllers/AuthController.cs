@@ -65,24 +65,24 @@ public class AuthController(AddisDbContext context, IConfiguration configuration
     {
         if (dto.Password != dto.ConfirmPassword) return BadRequest(new { message = "Password and confirmation must match." });
         if (!Enum.TryParse<UserRole>(dto.Role, true, out var role)) return BadRequest(new { message = "The selected role is invalid." });
-        if (dto.Password.Length < 8) return BadRequest(new { message = "Passwords must have at least 8 characters." });
+        if (!IsStrongPassword(dto.Password)) return BadRequest(new { message = PasswordRequirementMessage });
         if (await context.Users.AnyAsync(u => u.Email.ToLower() == dto.Email.Trim().ToLower())) return Conflict(new { message = "A user already uses this email." });
         if (dto.HospitalId is not null && !await context.Hospitals.AnyAsync(h => h.Id == dto.HospitalId)) return BadRequest(new { message = "Assigned hospital was not found." });
-        
-        var user = new User 
-        { 
-            FirstName = dto.FirstName.Trim(), 
-            LastName = dto.LastName.Trim(), 
-            Email = dto.Email.Trim().ToLower(), 
-            PhoneNumber = dto.PhoneNumber?.Trim() ?? string.Empty, 
-            Role = role, 
-            AssignedHospitalId = dto.HospitalId 
+
+        var user = new User
+        {
+            FirstName = dto.FirstName.Trim(),
+            LastName = dto.LastName.Trim(),
+            Email = dto.Email.Trim().ToLower(),
+            PhoneNumber = dto.PhoneNumber?.Trim() ?? string.Empty,
+            Role = role,
+            AssignedHospitalId = dto.HospitalId
         };
-        
+
         user.PasswordHash = new PasswordHasher<User>().HashPassword(user, dto.Password);
-        context.Users.Add(user); 
+        context.Users.Add(user);
         await context.SaveChangesAsync();
-        
+
         return CreatedAtAction(nameof(GetUsers), new { id = user.Id }, await UserList().SingleAsync(u => u.Id == user.Id));
     }
 
@@ -91,27 +91,27 @@ public class AuthController(AddisDbContext context, IConfiguration configuration
     [EndpointSummary("Update an existing user's first name, last name, profile information, role, hospital assignment, or password")]
     public async Task<ActionResult<UserManagementDto>> UpdateUser(Guid id, UpdateUserDto dto)
     {
-        var user = await context.Users.FindAsync(id); 
+        var user = await context.Users.FindAsync(id);
         if (user is null) return NotFound();
-        
+
         if (!Enum.TryParse<UserRole>(dto.Role, true, out var role)) return BadRequest(new { message = "The selected role is invalid." });
         if (await context.Users.AnyAsync(u => u.Id != id && u.Email.ToLower() == dto.Email.Trim().ToLower())) return Conflict(new { message = "A user already uses this email." });
         if (dto.HospitalId is not null && !await context.Hospitals.AnyAsync(h => h.Id == dto.HospitalId)) return BadRequest(new { message = "Assigned hospital was not found." });
-        
+
         user.FirstName = dto.FirstName.Trim();
         user.LastName = dto.LastName.Trim();
-        user.Email = dto.Email.Trim().ToLower(); 
-        user.PhoneNumber = dto.PhoneNumber?.Trim() ?? string.Empty; 
-        user.Role = role; 
+        user.Email = dto.Email.Trim().ToLower();
+        user.PhoneNumber = dto.PhoneNumber?.Trim() ?? string.Empty;
+        user.Role = role;
         user.AssignedHospitalId = dto.HospitalId;
-        
-        if (!string.IsNullOrWhiteSpace(dto.NewPassword)) 
-        { 
-            if (dto.NewPassword.Length < 8) return BadRequest(new { message = "Passwords must have at least 8 characters." }); 
-            user.PasswordHash = new PasswordHasher<User>().HashPassword(user, dto.NewPassword); 
+
+        if (!string.IsNullOrWhiteSpace(dto.NewPassword))
+        {
+            if (!IsStrongPassword(dto.NewPassword)) return BadRequest(new { message = PasswordRequirementMessage });
+            user.PasswordHash = new PasswordHasher<User>().HashPassword(user, dto.NewPassword);
         }
-        
-        await context.SaveChangesAsync(); 
+
+        await context.SaveChangesAsync();
         return Ok(await UserList().SingleAsync(u => u.Id == id));
     }
 
@@ -121,11 +121,11 @@ public class AuthController(AddisDbContext context, IConfiguration configuration
     public async Task<IActionResult> DeleteUser(Guid id)
     {
         if (User.FindFirstValue(ClaimTypes.NameIdentifier) == id.ToString()) return BadRequest(new { message = "You cannot delete your own administrator account." });
-        var user = await context.Users.FindAsync(id); 
+        var user = await context.Users.FindAsync(id);
         if (user is null) return NotFound();
-        
-        context.Users.Remove(user); 
-        await context.SaveChangesAsync(); 
+
+        context.Users.Remove(user);
+        await context.SaveChangesAsync();
         return NoContent();
     }
 
@@ -134,13 +134,22 @@ public class AuthController(AddisDbContext context, IConfiguration configuration
         .OrderBy(u => u.FirstName)
         .ThenBy(u => u.LastName)
         .Select(u => new UserManagementDto(
-            u.Id, 
-            u.FullName, 
-            u.Email, 
-            u.PhoneNumber, 
-            u.Role.ToString(), 
-            u.AssignedHospitalId, 
-            u.AssignedHospital != null ? u.AssignedHospital.Name : null, 
+            u.Id,
+            u.FullName,
+            u.Email,
+            u.PhoneNumber,
+            u.Role.ToString(),
+            u.AssignedHospitalId,
+            u.AssignedHospital != null ? u.AssignedHospital.Name : null,
             u.CreatedAt
         ));
+
+    private const string PasswordRequirementMessage = "Password must be at least 12 characters and include an uppercase letter, lowercase letter, number, and special character.";
+
+    private static bool IsStrongPassword(string password) =>
+        password.Length >= 12 &&
+        password.Any(char.IsUpper) &&
+        password.Any(char.IsLower) &&
+        password.Any(char.IsDigit) &&
+        password.Any(character => !char.IsLetterOrDigit(character) && !char.IsWhiteSpace(character));
 }

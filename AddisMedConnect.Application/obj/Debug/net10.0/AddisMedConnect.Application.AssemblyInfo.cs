@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("AddisMedConnect.Application")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e79e7d6dd49c10e87c0e7fc83dc67232730503bb")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+fd79baad9a5fa8cf53f99a9eec52403d1a3f6be2")]
 [assembly: System.Reflection.AssemblyProductAttribute("AddisMedConnect.Application")]
 [assembly: System.Reflection.AssemblyTitleAttribute("AddisMedConnect.Application")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

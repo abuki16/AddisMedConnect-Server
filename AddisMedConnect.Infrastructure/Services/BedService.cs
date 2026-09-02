@@ -16,35 +16,35 @@ public class BedService : IBedService
         _context = context;
         _bedNotificationService = bedNotificationService;
     }
-    
+
     public async Task<Bed> CreateBedAsync(CreateBedDto dto)
-{
-    // Verify that the target hospital exists
-    var hospitalExists = await _context.Hospitals.AnyAsync(h => h.Id == dto.HospitalId);
-    if (!hospitalExists)
     {
-        throw new KeyNotFoundException($"Hospital with ID '{dto.HospitalId}' was not found.");
+        // Verify that the target hospital exists
+        var hospitalExists = await _context.Hospitals.AnyAsync(h => h.Id == dto.HospitalId);
+        if (!hospitalExists)
+        {
+            throw new KeyNotFoundException($"Hospital with ID '{dto.HospitalId}' was not found.");
+        }
+
+        var bed = new Bed
+        {
+            Id = Guid.NewGuid(),
+            BedNumber = dto.BedNumber,
+            WardType = dto.WardType,
+            Code = dto.Code,
+            HospitalId = dto.HospitalId,
+            Status = BedStatus.Available,
+            LastStatusUpdate = DateTime.UtcNow
+        };
+
+        _context.Beds.Add(bed);
+        await _context.SaveChangesAsync();
+
+        // Optionally include hospital details in the returned object
+        return await _context.Beds
+            .Include(b => b.Hospital)
+            .FirstAsync(b => b.Id == bed.Id);
     }
-
-    var bed = new Bed
-    {
-        Id = Guid.NewGuid(),
-        BedNumber = dto.BedNumber,
-        WardType = dto.WardType,
-        Code = dto.Code,
-        HospitalId = dto.HospitalId,
-        Status = BedStatus.Available,
-        LastStatusUpdate = DateTime.UtcNow
-    };
-
-    _context.Beds.Add(bed);
-    await _context.SaveChangesAsync();
-
-    // Optionally include hospital details in the returned object
-    return await _context.Beds
-        .Include(b => b.Hospital)
-        .FirstAsync(b => b.Id == bed.Id);
-}
     public async Task<IEnumerable<Bed>> GetAllBedsAsync()
     {
         return await _context.Beds
@@ -65,7 +65,7 @@ public class BedService : IBedService
             .Where(b => b.HospitalId == hospitalId && b.CurrentCaseId == null && b.Status == BedStatus.Available)
             .ToListAsync();
     }
-    
+
     public async Task<bool> UpdateBedStatusAsync(Guid bedId, BedStatus status)
     {
         var bed = await _context.Beds.FindAsync(bedId);
@@ -78,7 +78,7 @@ public class BedService : IBedService
         {
             bed.CurrentCaseId = null;
         }
-        
+
         await _context.SaveChangesAsync();
 
         // 🚀 Broadcast real-time update using your SignalR notification service

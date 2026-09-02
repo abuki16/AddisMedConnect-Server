@@ -70,7 +70,10 @@ public class AmbulancesController : ControllerBase
         var ambulance = await _context.Ambulances.SingleOrDefaultAsync(a => a.DriverUserId == userId);
         if (ambulance is null) return NotFound(new { message = "No ambulance is linked to this driver account." });
         var assignment = await _context.EmergencyCases.Include(c => c.TargetHospital)
-            .Where(c => c.AssignedAmbulanceId == ambulance.Id && c.Status != Domain.Enums.CaseStatus.Resolved && c.Status != Domain.Enums.CaseStatus.Cancelled)
+            .Where(c => c.AssignedAmbulanceId == ambulance.Id &&
+                        (c.Status == Domain.Enums.CaseStatus.Dispatched ||
+                         c.Status == Domain.Enums.CaseStatus.InTransit ||
+                         c.Status == Domain.Enums.CaseStatus.ArrivedAtTriage))
             .OrderByDescending(c => c.CreatedAt).FirstOrDefaultAsync();
         return Ok(new { ambulance, assignment });
     }
@@ -96,9 +99,9 @@ public class AmbulancesController : ControllerBase
 }
 
 public record CreateAmbulanceDto(
-    string PlateNumber, 
-    string? DriverName, 
-    string? PhoneNumber, 
-    double? CurrentLatitude, 
+    string PlateNumber,
+    string? DriverName,
+    string? PhoneNumber,
+    double? CurrentLatitude,
     double? CurrentLongitude
 );

@@ -3,7 +3,7 @@ using AddisMedConnect.Domain.Enums;
 namespace AddisMedConnect.Application.DTOs;
 
 public record EmergencyCaseDto(
-    string IncidentNumber, 
+    string IncidentNumber,
     string CallerName,
     string CallerPhone,
     string PatientName,
