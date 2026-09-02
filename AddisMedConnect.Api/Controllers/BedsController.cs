@@ -2,12 +2,14 @@ using AddisMedConnect.Application.Interfaces;
 using AddisMedConnect.Domain.Entities;
 using AddisMedConnect.Domain.Enums;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 
 namespace AddisMedConnect.Api.Controllers;
 
 [ApiController]
 [Route("api/beds")]
 [Produces("application/json")]
+[Authorize]
 public class BedsController : ControllerBase
 {
     private readonly IBedService _bedService;
@@ -18,6 +20,7 @@ public class BedsController : ControllerBase
     }
      // POST: api/beds
 [HttpPost]
+[Authorize(Roles = "SystemAdmin,DischargeClerk")]
 [ProducesResponseType(typeof(Bed), StatusCodes.Status201Created)]
 [ProducesResponseType(StatusCodes.Status400BadRequest)]
 [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -67,6 +70,7 @@ public async Task<ActionResult<Bed>> CreateBed([FromBody] CreateBedDto dto)
 
     // PATCH: api/beds/{bedId}/status
     [HttpPatch("{bedId:guid}/status")]
+    [Authorize(Roles = "SystemAdmin,DischargeClerk")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [EndpointSummary("Directly update a bed's status and broadcast via SignalR")]

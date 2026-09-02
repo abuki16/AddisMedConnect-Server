@@ -18,6 +18,7 @@ public interface IEmergencyService
     Task<int> GetPendingTriageCountByHospitalAsync(Guid hospitalId);
     
     Task<HospitalCapacityResultDto> CheckCapacityAndFindAlternativeAsync(Guid hospitalId, string wardType, double currentLat, double currentLng);
+    Task<IEnumerable<HospitalRecommendationDto>> FindRecommendedHospitalsAsync(string wardType, double latitude, double longitude);
     Task<List<Ambulance>> GetAvailableAmbulancesAsync();
     Task<EmergencyCaseDto> AssignResourcesAsync(string incidentNumber, Guid bedId, Guid ambulanceId);
 }

@@ -22,6 +22,78 @@ namespace AddisMedConnect.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("AddisMedConnect.Domain.Entities.Ambulance", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<double?>("CurrentLatitude")
+                        .HasColumnType("double precision");
+
+                    b.Property<double?>("CurrentLongitude")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("DriverName")
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("DriverUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsAvailable")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("LastLocationUpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PhoneNumber")
+                        .HasColumnType("text");
+
+                    b.Property<string>("PlateNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DriverUserId");
+
+                    b.HasIndex("PlateNumber")
+                        .IsUnique();
+
+                    b.ToTable("Ambulances");
+                });
+
+            modelBuilder.Entity("AddisMedConnect.Domain.Entities.AmbulanceLocation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AddressLabel")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("AmbulanceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("IncidentNumber")
+                        .HasColumnType("text");
+
+                    b.Property<double>("Latitude")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("Longitude")
+                        .HasColumnType("double precision");
+
+                    b.Property<DateTime>("RecordedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AmbulanceId", "RecordedAt");
+
+                    b.ToTable("AmbulanceLocations");
+                });
+
             modelBuilder.Entity("AddisMedConnect.Domain.Entities.Bed", b =>
                 {
                     b.Property<Guid>("Id")
@@ -178,7 +250,11 @@ namespace AddisMedConnect.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<string>("FullName")
+                    b.Property<string>("FirstName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("LastName")
                         .IsRequired()
                         .HasColumnType("text");
 
@@ -200,34 +276,25 @@ namespace AddisMedConnect.Infrastructure.Migrations
                     b.ToTable("Users");
                 });
 
-            modelBuilder.Entity("Ambulance", b =>
+            modelBuilder.Entity("AddisMedConnect.Domain.Entities.Ambulance", b =>
                 {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
+                    b.HasOne("AddisMedConnect.Domain.Entities.User", "DriverUser")
+                        .WithMany()
+                        .HasForeignKey("DriverUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
 
-                    b.Property<double?>("CurrentLatitude")
-                        .HasColumnType("double precision");
+                    b.Navigation("DriverUser");
+                });
 
-                    b.Property<double?>("CurrentLongitude")
-                        .HasColumnType("double precision");
+            modelBuilder.Entity("AddisMedConnect.Domain.Entities.AmbulanceLocation", b =>
+                {
+                    b.HasOne("AddisMedConnect.Domain.Entities.Ambulance", "Ambulance")
+                        .WithMany("LocationHistory")
+                        .HasForeignKey("AmbulanceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
-                    b.Property<string>("DriverName")
-                        .HasColumnType("text");
-
-                    b.Property<bool>("IsAvailable")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("PhoneNumber")
-                        .HasColumnType("text");
-
-                    b.Property<string>("PlateNumber")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("Ambulances");
+                    b.Navigation("Ambulance");
                 });
 
             modelBuilder.Entity("AddisMedConnect.Domain.Entities.Bed", b =>
@@ -250,7 +317,7 @@ namespace AddisMedConnect.Infrastructure.Migrations
 
             modelBuilder.Entity("AddisMedConnect.Domain.Entities.EmergencyCase", b =>
                 {
-                    b.HasOne("Ambulance", "AssignedAmbulance")
+                    b.HasOne("AddisMedConnect.Domain.Entities.Ambulance", "AssignedAmbulance")
                         .WithMany()
                         .HasForeignKey("AssignedAmbulanceId");
 
@@ -273,6 +340,11 @@ namespace AddisMedConnect.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("AssignedHospital");
+                });
+
+            modelBuilder.Entity("AddisMedConnect.Domain.Entities.Ambulance", b =>
+                {
+                    b.Navigation("LocationHistory");
                 });
 
             modelBuilder.Entity("AddisMedConnect.Domain.Entities.EmergencyCase", b =>

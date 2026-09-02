@@ -11,6 +11,7 @@ public class AddisDbContext : DbContext
     public DbSet<Bed> Beds => Set<Bed>();
     public DbSet<User> Users => Set<User>();
     public DbSet<Ambulance> Ambulances => Set<Ambulance>();
+    public DbSet<AmbulanceLocation> AmbulanceLocations => Set<AmbulanceLocation>();
     public DbSet<EmergencyCase> EmergencyCases => Set<EmergencyCase>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -42,5 +43,22 @@ public class AddisDbContext : DbContext
             .WithOne(b => b.CurrentCase)
             .HasForeignKey<Bed>(b => b.CurrentCaseId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<Ambulance>()
+            .HasIndex(a => a.PlateNumber)
+            .IsUnique();
+        modelBuilder.Entity<Ambulance>()
+            .HasOne(a => a.DriverUser)
+            .WithMany()
+            .HasForeignKey(a => a.DriverUserId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<AmbulanceLocation>()
+            .HasOne(l => l.Ambulance)
+            .WithMany(a => a.LocationHistory)
+            .HasForeignKey(l => l.AmbulanceId)
+            .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<AmbulanceLocation>()
+            .HasIndex(l => new { l.AmbulanceId, l.RecordedAt });
     }
 }

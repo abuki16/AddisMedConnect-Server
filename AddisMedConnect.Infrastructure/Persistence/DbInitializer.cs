@@ -1,6 +1,7 @@
 using AddisMedConnect.Domain.Entities;
 using AddisMedConnect.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity;
 
 namespace AddisMedConnect.Infrastructure.Persistence;
 
@@ -10,7 +11,26 @@ public static class DbInitializer
     {
         await context.Database.MigrateAsync();
 
-        if (await context.Hospitals.AnyAsync()) return;
+        if (await context.Hospitals.AnyAsync())
+        {
+            // Existing installations need the role accounts too; do not overwrite operational data.
+            if (!await context.Users.AnyAsync())
+            {
+                var hospital = await context.Hospitals.OrderBy(h => h.Name).FirstAsync();
+                var existingUserHasher = new PasswordHasher<User>();
+                var dispatcher = new User { FirstName = "Dispatch", LastName = "Operator", Email = "dispatcher@addismedconnect.et", Role = UserRole.Dispatcher };
+                var triage = new User { FirstName = "Triage", LastName = "Nurse", Email = "triage@addismedconnect.et", Role = UserRole.TriageNurse, AssignedHospital = hospital };
+                var driver = new User { FirstName = "Driver", LastName = "One", Email = "driver@addismedconnect.et", Role = UserRole.AmbulanceDriver };
+                var dischargeClerk = new User { FirstName = "Discharge", LastName = "Clerk", Email = "discharge@addismedconnect.et", Role = UserRole.DischargeClerk, AssignedHospital = hospital };
+                var admin = new User { FirstName = "System", LastName = "Administrator", Email = "admin@addismedconnect.et", Role = UserRole.SystemAdmin };
+                var existingUsers = new[] { dispatcher, triage, driver, dischargeClerk, admin };
+                foreach (var user in existingUsers) user.PasswordHash = existingUserHasher.HashPassword(user, "ChangeMe123!");
+                await context.Users.AddRangeAsync(existingUsers);
+                if (!await context.Ambulances.AnyAsync()) await context.Ambulances.AddAsync(new Ambulance { PlateNumber = "AA-3-12345", DriverName = driver.FullName, DriverUser = driver, PhoneNumber = "+251911000000" });
+                await context.SaveChangesAsync();
+            }
+            return;
+        }
 
         // 1. Define Hospitals with Fixed GUIDs matching your frontend dropdown IDs
         var tikurAnbessa = new Hospital
@@ -112,6 +132,18 @@ public static class DbInitializer
         };
 
         await context.Beds.AddRangeAsync(beds);
+        var hasher = new PasswordHasher<User>();
+        var users = new[]
+        {
+            new User { FirstName = "Dispatch", LastName = "Operator", Email = "dispatcher@addismedconnect.et", Role = UserRole.Dispatcher },
+            new User { FirstName = "Triage", LastName = "Nurse", Email = "triage@addismedconnect.et", Role = UserRole.TriageNurse, AssignedHospital = tikurAnbessa },
+            new User { FirstName = "Driver", LastName = "One", Email = "driver@addismedconnect.et", Role = UserRole.AmbulanceDriver },
+            new User { FirstName = "Discharge", LastName = "Clerk", Email = "discharge@addismedconnect.et", Role = UserRole.DischargeClerk, AssignedHospital = tikurAnbessa },
+            new User { FirstName = "System", LastName = "Administrator", Email = "admin@addismedconnect.et", Role = UserRole.SystemAdmin }
+        };
+        foreach (var user in users) user.PasswordHash = hasher.HashPassword(user, "ChangeMe123!");
+        await context.Users.AddRangeAsync(users);
+        await context.Ambulances.AddAsync(new Ambulance { Id = Guid.NewGuid(), PlateNumber = "AA-3-12345", DriverName = users[2].FullName, DriverUser = users[2], PhoneNumber = "+251911000000", CurrentLatitude = 9.03, CurrentLongitude = 38.74 });
         await context.SaveChangesAsync();
     }
 }

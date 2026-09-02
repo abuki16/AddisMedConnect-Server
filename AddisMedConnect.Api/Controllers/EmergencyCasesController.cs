@@ -2,12 +2,15 @@ using AddisMedConnect.Application.DTOs;
 using AddisMedConnect.Application.Interfaces;
 using AddisMedConnect.Domain.Enums;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
 
 namespace AddisMedConnect.Api.Controllers;
 
 [ApiController]
 [Route("api/emergency-cases")]
 [Produces("application/json")]
+[Authorize]
 public class EmergencyCasesController : ControllerBase
 {
     private readonly IEmergencyService _emergencyService;
@@ -18,6 +21,7 @@ public class EmergencyCasesController : ControllerBase
     }
 
     [HttpGet]
+    [Authorize(Roles = "Dispatcher,SystemAdmin")]
     [ProducesResponseType(typeof(IEnumerable<EmergencyCaseDto>), StatusCodes.Status200OK)]
     [EndpointSummary("Retrieve all emergency cases")]
     public async Task<ActionResult<IEnumerable<EmergencyCaseDto>>> GetAll()
@@ -27,19 +31,23 @@ public class EmergencyCasesController : ControllerBase
     }
 
     [HttpGet("hospital/{hospitalId:guid}")]
+    [Authorize(Roles = "TriageNurse,DischargeClerk,SystemAdmin")]
     [ProducesResponseType(typeof(IEnumerable<EmergencyCaseDto>), StatusCodes.Status200OK)]
     [EndpointSummary("Retrieve active inbound (Dispatched) emergency cases for a specific hospital triage queue")]
     public async Task<ActionResult<IEnumerable<EmergencyCaseDto>>> GetCasesByHospital(Guid hospitalId)
     {
+        if (!CanAccessHospital(hospitalId)) return Forbid();
         var cases = await _emergencyService.GetCasesByHospitalAsync(hospitalId);
         return Ok(cases);
     }
 
     [HttpGet("hospital/{hospitalId:guid}/active")]
+    [Authorize(Roles = "TriageNurse,DischargeClerk,SystemAdmin")]
     [ProducesResponseType(typeof(IEnumerable<EmergencyCaseDto>), StatusCodes.Status200OK)]
     [EndpointSummary("Retrieve active cases (Dispatched or Admitted) for discharge management")]
     public async Task<ActionResult<IEnumerable<EmergencyCaseDto>>> GetActiveHospitalCases(Guid hospitalId)
     {
+        if (!CanAccessHospital(hospitalId)) return Forbid();
         var cases = await _emergencyService.GetActiveHospitalCasesAsync(hospitalId);
         return Ok(cases);
     }
@@ -74,6 +82,7 @@ public class EmergencyCasesController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Roles = "Dispatcher,SystemAdmin")]
     [ProducesResponseType(typeof(EmergencyCaseDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -85,28 +94,50 @@ public class EmergencyCasesController : ControllerBase
     }
 
     [HttpPatch("{incidentNumber}/status")]
+    [Authorize(Roles = "DischargeClerk,SystemAdmin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [EndpointSummary("Update operational status of an emergency case (e.g., Resolve/Discharge)")]
     public async Task<IActionResult> UpdateStatus(string incidentNumber, [FromBody] UpdateCaseStatusDto dto)
     {
+        var emergencyCase = await _emergencyService.GetCaseByIncidentNumberAsync(incidentNumber);
+        if (emergencyCase is null) return NotFound();
+        if (!CanAccessHospital(emergencyCase.TargetHospitalId)) return Forbid();
         var success = await _emergencyService.UpdateCaseStatusAsync(incidentNumber, dto.Status);
         if (!success) return NotFound();
         return NoContent();
     }
 
     [HttpPost("{incidentNumber}/triage")]
+    [Authorize(Roles = "TriageNurse,SystemAdmin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [EndpointSummary("Complete triage intake, transition status to Admitted, and occupy bed")]
     public async Task<IActionResult> CompleteTriage(string incidentNumber, [FromBody] TriageAssessmentDto dto)
     {
+        var emergencyCase = await _emergencyService.GetCaseByIncidentNumberAsync(incidentNumber);
+        if (emergencyCase is null) return NotFound();
+        if (!CanAccessHospital(emergencyCase.TargetHospitalId)) return Forbid();
         var success = await _emergencyService.CompleteTriageAsync(incidentNumber, dto);
         if (!success) return NotFound();
         return NoContent();
     }
 
+    [HttpPost("{incidentNumber}/discharge")]
+    [Authorize(Roles = "DischargeClerk,SystemAdmin")]
+    [EndpointSummary("Close a healed or transferred admission and free its occupied bed")]
+    public async Task<IActionResult> Discharge(string incidentNumber)
+    {
+        var emergencyCase = await _emergencyService.GetCaseByIncidentNumberAsync(incidentNumber);
+        if (emergencyCase is null) return NotFound();
+        if (!CanAccessHospital(emergencyCase.TargetHospitalId)) return Forbid();
+        return await _emergencyService.UpdateCaseStatusAsync(incidentNumber, CaseStatus.Resolved) ? NoContent() : NotFound();
+    }
+
+    private bool CanAccessHospital(Guid hospitalId) => User.IsInRole("SystemAdmin") || User.FindFirstValue("hospital_id") == hospitalId.ToString();
+
     [HttpGet("check-capacity")]
+    [Authorize(Roles = "Dispatcher,SystemAdmin")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [EndpointSummary("Check hospital bed capacity and recommend nearest alternative if full")]
     public async Task<IActionResult> CheckCapacity(
@@ -119,6 +150,15 @@ public class EmergencyCasesController : ControllerBase
         return Ok(result);
     }
 
+    [HttpGet("hospital-recommendations")]
+    [Authorize(Roles = "Dispatcher,SystemAdmin")]
+    [EndpointSummary("Rank nearby hospitals using caller coordinates and requested ward capacity")]
+    public async Task<IActionResult> RecommendHospitals([FromQuery] string wardType, [FromQuery] double lat, [FromQuery] double lng)
+    {
+        if (lat is < -90 or > 90 || lng is < -180 or > 180) return BadRequest(new { message = "Caller coordinates are invalid." });
+        return Ok(await _emergencyService.FindRecommendedHospitalsAsync(wardType, lat, lng));
+    }
+
     [HttpGet("available-ambulances")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [EndpointSummary("Fetch all currently available ambulances")]
@@ -129,6 +169,7 @@ public class EmergencyCasesController : ControllerBase
     }
 
     [HttpPost("{incidentNumber}/assign")]
+    [Authorize(Roles = "Dispatcher,SystemAdmin")]
     [ProducesResponseType(typeof(EmergencyCaseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]

@@ -259,6 +259,12 @@ public class EmergencyService : IEmergencyService
                 ec.AssignedBed.CurrentCaseId = null;
                 ec.AssignedBedId = null;
             }
+            if (ec.AssignedAmbulanceId is not null)
+            {
+                var ambulance = await _context.Ambulances.FindAsync(ec.AssignedAmbulanceId);
+                if (ambulance is not null) ambulance.IsAvailable = true;
+                ec.AssignedAmbulanceId = null;
+            }
         }
 
         await _context.SaveChangesAsync();
@@ -302,6 +308,14 @@ public class EmergencyService : IEmergencyService
         {
             ec.AssignedBed.Status = BedStatus.Occupied;
             ec.AssignedBed.LastStatusUpdate = DateTime.UtcNow;
+        }
+
+        // The patient is now checked in. This ambulance must immediately return to the available fleet.
+        if (ec.AssignedAmbulanceId is not null)
+        {
+            var ambulance = await _context.Ambulances.FindAsync(ec.AssignedAmbulanceId);
+            if (ambulance is not null) ambulance.IsAvailable = true;
+            ec.AssignedAmbulanceId = null;
         }
 
         await _context.SaveChangesAsync();
@@ -351,6 +365,19 @@ public class EmergencyService : IEmergencyService
             DistanceKm = nearestHospitalWithBeds?.DistanceKm ?? 0,
             AvailableBedsCount = nearestHospitalWithBeds?.AvailableBedsCount ?? 0
         };
+    }
+
+    public async Task<IEnumerable<HospitalRecommendationDto>> FindRecommendedHospitalsAsync(string wardType, double latitude, double longitude)
+    {
+        var hospitals = await _context.Hospitals
+            .Select(h => new { h.Id, h.Name, h.SubCity, h.Address, h.Latitude, h.Longitude, AvailableBeds = h.Beds.Count(b => b.Status == BedStatus.Available), WardBeds = h.Beds.Count(b => b.Status == BedStatus.Available && b.WardType == wardType) })
+            .ToListAsync();
+
+        return hospitals.Where(h => h.Latitude.HasValue && h.Longitude.HasValue)
+            .Select(h => new HospitalRecommendationDto(h.Id, h.Name, h.SubCity, h.Address,
+                HaversineKilometres(latitude, longitude, h.Latitude!.Value, h.Longitude!.Value), h.AvailableBeds, h.WardBeds > 0,
+                h.WardBeds > 0 ? "Recommended - requested ward has a free bed" : "No free requested-ward bed"))
+            .OrderByDescending(h => h.HasRequestedWardCapacity).ThenBy(h => h.DistanceKm).ToList();
     }
 
     public async Task<List<Ambulance>> GetAvailableAmbulancesAsync()
@@ -411,6 +438,7 @@ public class EmergencyService : IEmergencyService
 
         emergencyCase.AssignedBedId = bedId;
         emergencyCase.AssignedAmbulanceId = ambulanceId;
+        ambulance.IsAvailable = false;
         emergencyCase.Status = CaseStatus.Dispatched;
 
         await _context.SaveChangesAsync();
@@ -423,4 +451,13 @@ public class EmergencyService : IEmergencyService
         Console.WriteLine($"[SMS GATEWAY SIMULATION] Sending to {phoneNumber}: \"{message}\"");
         return Task.CompletedTask;
     }
+
+    private static double HaversineKilometres(double lat1, double lng1, double lat2, double lng2)
+    {
+        const double earthRadius = 6371;
+        var dLat = DegreesToRadians(lat2 - lat1); var dLng = DegreesToRadians(lng2 - lng1);
+        var a = Math.Sin(dLat / 2) * Math.Sin(dLat / 2) + Math.Cos(DegreesToRadians(lat1)) * Math.Cos(DegreesToRadians(lat2)) * Math.Sin(dLng / 2) * Math.Sin(dLng / 2);
+        return earthRadius * 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+    }
+    private static double DegreesToRadians(double value) => value * Math.PI / 180;
 }
