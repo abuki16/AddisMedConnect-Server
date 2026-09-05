@@ -163,7 +163,7 @@ public class AuthController(AddisDbContext context, IConfiguration configuration
         if (dto.Password != dto.ConfirmPassword) return BadRequest(new { message = "Password and confirmation must match." });
         var roleStr = dto.Role.Equals("Admin", StringComparison.OrdinalIgnoreCase) ? "SystemAdmin" : dto.Role;
         if (!Enum.TryParse<UserRole>(roleStr, true, out var role)) return BadRequest(new { message = "The selected role is invalid." });
-        // if (!IsStrongPassword(dto.Password)) return BadRequest(new { message = PasswordRequirementMessage }); // Temporarily commented out for admin setup/dev
+        if (!IsStrongPassword(dto.Password)) return BadRequest(new { message = PasswordRequirementMessage });
         if (await context.Users.AnyAsync(u => u.Email.ToLower() == dto.Email.Trim().ToLower())) return Conflict(new { message = "A user already uses this email." });
         if (dto.HospitalId is not null && !await context.Hospitals.AnyAsync(h => h.Id == dto.HospitalId)) return BadRequest(new { message = "Assigned hospital was not found." });
 
@@ -206,7 +206,7 @@ public class AuthController(AddisDbContext context, IConfiguration configuration
 
         if (!string.IsNullOrWhiteSpace(dto.NewPassword))
         {
-            // if (!IsStrongPassword(dto.NewPassword)) return BadRequest(new { message = PasswordRequirementMessage }); // Temporarily commented out for admin setup/dev
+            if (!IsStrongPassword(dto.NewPassword)) return BadRequest(new { message = PasswordRequirementMessage });
             user.PasswordHash = new PasswordHasher<User>().HashPassword(user, dto.NewPassword);
         }
 
@@ -239,10 +239,10 @@ public class AuthController(AddisDbContext context, IConfiguration configuration
         u.CreatedAt
     );
 
-    private const string PasswordRequirementMessage = "Password must be at least 12 characters and include an uppercase letter, lowercase letter, number, and special character.";
+    private const string PasswordRequirementMessage = "Password must be at least 8 characters and include an uppercase letter, lowercase letter, number, and special character.";
 
     private static bool IsStrongPassword(string password) =>
-        password.Length >= 12 &&
+        password.Length >= 8 &&
         password.Any(char.IsUpper) &&
         password.Any(char.IsLower) &&
         password.Any(char.IsDigit) &&

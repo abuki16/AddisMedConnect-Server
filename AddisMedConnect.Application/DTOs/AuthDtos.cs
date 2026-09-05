@@ -19,7 +19,7 @@ public class CreateUserDto
     [Required]
     public string Email { get; set; } = string.Empty;
 
-    [Required, MinLength(12)]
+    [Required, MinLength(8)]
     public string Password { get; set; } = string.Empty;
 
     [Required, Compare("Password")]
