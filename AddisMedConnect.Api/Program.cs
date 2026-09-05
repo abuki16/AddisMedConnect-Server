@@ -79,7 +79,10 @@ if (builderApp.Environment.IsDevelopment())
 builderApp.UseExceptionHandler();
 builderApp.UseStatusCodePages();
 
-builderApp.UseHttpsRedirection();
+if (!builderApp.Environment.IsDevelopment())
+{
+    builderApp.UseHttpsRedirection();
+}
 
 // 6. Middleware Pipeline (Must include UseRouting before UseCors & MapEndpoints)
 builderApp.UseRouting();
@@ -88,9 +91,23 @@ builderApp.UseCors("AllowClient");
 builderApp.UseAuthentication();
 builderApp.UseAuthorization();
 
+var clientDistPath = Path.GetFullPath(Path.Combine(builderApp.Environment.ContentRootPath, "..", "..", "AddisMedConnect-client", "dist", "AddisMedConnect-client", "browser"));
+if (Directory.Exists(clientDistPath))
+{
+    var fileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(clientDistPath);
+    builderApp.UseDefaultFiles(new DefaultFilesOptions { FileProvider = fileProvider });
+    builderApp.UseStaticFiles(new StaticFileOptions { FileProvider = fileProvider });
+}
+
 // 7. Endpoint Mappings
 builderApp.MapControllers();
 builderApp.MapHub<BedHub>("/hubs/beds").RequireAuthorization().RequireCors("AllowClient");
 builderApp.MapHub<EmergencyHub>("/hubs/emergency").RequireAuthorization().RequireCors("AllowClient");
+
+if (Directory.Exists(clientDistPath))
+{
+    var fileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(clientDistPath);
+    builderApp.MapFallbackToFile("index.html", new StaticFileOptions { FileProvider = fileProvider });
+}
 
 builderApp.Run();
