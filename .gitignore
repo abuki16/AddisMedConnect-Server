@@ -10,3 +10,13 @@ db/sql
 # AssetBundler plugin: generated bundles
 javascripts/bundles
 stylesheets/bundles
+
+# .NET build outputs and temporary files
+[Bb]in/
+[Oo]bj/
+.vs/
+.vscode/
+*.user
+*.userosscache
+*.suo
+appsettings.Development.json
