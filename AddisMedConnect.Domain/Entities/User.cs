@@ -23,4 +23,12 @@ public class User
     public Hospital? AssignedHospital { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    // Security & Account Lockout
+    public int FailedLoginAttempts { get; set; } = 0;
+    public DateTime? LockoutEnd { get; set; }
+    public int LockoutTier { get; set; } = 0;
+
+    [NotMapped]
+    public bool IsLockedOut => LockoutEnd.HasValue && LockoutEnd.Value > DateTime.UtcNow;
 }

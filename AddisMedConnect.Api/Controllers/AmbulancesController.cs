@@ -25,8 +25,25 @@ public class AmbulancesController : ControllerBase
     [EndpointSummary("Retrieve all registered ambulances")]
     public async Task<ActionResult<IEnumerable<Ambulance>>> GetAll()
     {
-        var ambulances = await _context.Ambulances.ToListAsync();
+        var ambulances = await _context.Ambulances
+            .Include(a => a.DriverUser)
+            .OrderBy(a => a.PlateNumber)
+            .ToListAsync();
         return Ok(ambulances);
+    }
+
+    [HttpGet("{ambulanceId:guid}")]
+    [Authorize(Roles = "Dispatcher,SystemAdmin")]
+    [ProducesResponseType(typeof(Ambulance), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [EndpointSummary("Retrieve a single ambulance by ID")]
+    public async Task<ActionResult<Ambulance>> GetById(Guid ambulanceId)
+    {
+        var ambulance = await _context.Ambulances
+            .Include(a => a.DriverUser)
+            .FirstOrDefaultAsync(a => a.Id == ambulanceId);
+        if (ambulance is null) return NotFound(new { message = $"Ambulance with ID '{ambulanceId}' was not found." });
+        return Ok(ambulance);
     }
 
     [HttpPost]
@@ -38,7 +55,7 @@ public class AmbulancesController : ControllerBase
     public async Task<ActionResult<Ambulance>> Create([FromBody] CreateAmbulanceDto dto)
     {
         var existingAmbulance = await _context.Ambulances
-            .AnyAsync(a => a.PlateNumber.ToLower() == dto.PlateNumber.ToLower());
+            .AnyAsync(a => a.PlateNumber.ToLower() == dto.PlateNumber.Trim().ToLower());
 
         if (existingAmbulance)
         {
@@ -48,18 +65,113 @@ public class AmbulancesController : ControllerBase
         var ambulance = new Ambulance
         {
             Id = Guid.NewGuid(),
-            PlateNumber = dto.PlateNumber,
-            DriverName = dto.DriverName,
-            PhoneNumber = dto.PhoneNumber,
-            IsAvailable = true,
-            CurrentLatitude = dto.CurrentLatitude,
-            CurrentLongitude = dto.CurrentLongitude
+            PlateNumber = dto.PlateNumber.Trim(),
+            DriverName = string.IsNullOrWhiteSpace(dto.DriverName) ? null : dto.DriverName.Trim(),
+            DriverUserId = dto.DriverUserId,
+            PhoneNumber = string.IsNullOrWhiteSpace(dto.PhoneNumber) ? null : dto.PhoneNumber.Trim(),
+            IsAvailable = dto.IsAvailable,
+            CurrentLatitude = dto.CurrentLatitude ?? 9.0300,
+            CurrentLongitude = dto.CurrentLongitude ?? 38.7400,
+            LastLocationUpdatedAt = DateTime.UtcNow
         };
 
         _context.Ambulances.Add(ambulance);
         await _context.SaveChangesAsync();
 
         return CreatedAtAction(nameof(GetAll), new { id = ambulance.Id }, ambulance);
+    }
+
+    [HttpPut("{ambulanceId:guid}")]
+    [Authorize(Roles = "Dispatcher,SystemAdmin")]
+    [ProducesResponseType(typeof(Ambulance), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [EndpointSummary("Update ambulance fleet vehicle details, plate number, driver, or availability")]
+    public async Task<ActionResult<Ambulance>> Update(Guid ambulanceId, [FromBody] UpdateAmbulanceDto dto)
+    {
+        var ambulance = await _context.Ambulances.FindAsync(ambulanceId);
+        if (ambulance is null) return NotFound(new { message = $"Ambulance with ID '{ambulanceId}' was not found." });
+
+        var plateClash = await _context.Ambulances
+            .AnyAsync(a => a.Id != ambulanceId && a.PlateNumber.ToLower() == dto.PlateNumber.Trim().ToLower());
+        if (plateClash)
+        {
+            return Conflict(new { message = $"Another ambulance with plate number '{dto.PlateNumber}' already exists." });
+        }
+
+        ambulance.PlateNumber = dto.PlateNumber.Trim();
+        ambulance.DriverName = string.IsNullOrWhiteSpace(dto.DriverName) ? null : dto.DriverName.Trim();
+        ambulance.PhoneNumber = string.IsNullOrWhiteSpace(dto.PhoneNumber) ? null : dto.PhoneNumber.Trim();
+        ambulance.DriverUserId = dto.DriverUserId;
+        ambulance.IsAvailable = dto.IsAvailable;
+        if (dto.CurrentLatitude is not null && dto.CurrentLongitude is not null)
+        {
+            ambulance.CurrentLatitude = dto.CurrentLatitude;
+            ambulance.CurrentLongitude = dto.CurrentLongitude;
+            ambulance.LastLocationUpdatedAt = DateTime.UtcNow;
+        }
+
+        await _context.SaveChangesAsync();
+        return Ok(ambulance);
+    }
+
+    [HttpPatch("{ambulanceId:guid}/status")]
+    [Authorize(Roles = "Dispatcher,SystemAdmin")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [EndpointSummary("Toggle or update an ambulance's operational status (available vs out-of-service)")]
+    public async Task<IActionResult> UpdateStatus(Guid ambulanceId, [FromBody] UpdateAmbulanceStatusDto dto)
+    {
+        var ambulance = await _context.Ambulances.FindAsync(ambulanceId);
+        if (ambulance is null) return NotFound(new { message = $"Ambulance with ID '{ambulanceId}' was not found." });
+
+        ambulance.IsAvailable = dto.IsAvailable;
+        await _context.SaveChangesAsync();
+        return NoContent();
+    }
+
+    [HttpDelete("{ambulanceId:guid}")]
+    [Authorize(Roles = "SystemAdmin")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [EndpointSummary("Permanently decommission and delete an ambulance from the fleet")]
+    public async Task<IActionResult> Delete(Guid ambulanceId)
+    {
+        var ambulance = await _context.Ambulances.FindAsync(ambulanceId);
+        if (ambulance is null) return NotFound(new { message = $"Ambulance with ID '{ambulanceId}' was not found." });
+
+        // Check if assigned to an active emergency case
+        var hasActiveCase = await _context.EmergencyCases.AnyAsync(c =>
+            c.AssignedAmbulanceId == ambulanceId &&
+            c.Status != Domain.Enums.CaseStatus.Resolved &&
+            c.Status != Domain.Enums.CaseStatus.Cancelled);
+
+        if (hasActiveCase)
+        {
+            return Conflict(new { message = "Cannot delete ambulance while it is currently dispatched or on an active emergency mission." });
+        }
+
+        // For past resolved/cancelled cases, detach the ambulance reference
+        var pastCases = await _context.EmergencyCases
+            .Where(c => c.AssignedAmbulanceId == ambulanceId)
+            .ToListAsync();
+        foreach (var c in pastCases)
+        {
+            c.AssignedAmbulanceId = null;
+        }
+
+        // Delete associated location logs
+        var locations = await _context.AmbulanceLocations
+            .Where(l => l.AmbulanceId == ambulanceId)
+            .ToListAsync();
+        _context.AmbulanceLocations.RemoveRange(locations);
+
+        _context.Ambulances.Remove(ambulance);
+        await _context.SaveChangesAsync();
+
+        return NoContent();
     }
 
     [HttpGet("mine")]
@@ -103,5 +215,21 @@ public record CreateAmbulanceDto(
     string? DriverName,
     string? PhoneNumber,
     double? CurrentLatitude,
-    double? CurrentLongitude
+    double? CurrentLongitude,
+    Guid? DriverUserId = null,
+    bool IsAvailable = true
+);
+
+public record UpdateAmbulanceDto(
+    string PlateNumber,
+    string? DriverName,
+    string? PhoneNumber,
+    bool IsAvailable,
+    Guid? DriverUserId = null,
+    double? CurrentLatitude = null,
+    double? CurrentLongitude = null
+);
+
+public record UpdateAmbulanceStatusDto(
+    bool IsAvailable
 );

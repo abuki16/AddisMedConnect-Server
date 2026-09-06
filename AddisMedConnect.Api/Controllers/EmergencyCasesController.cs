@@ -1,8 +1,10 @@
+using AddisMedConnect.Api.Hubs;
 using AddisMedConnect.Application.DTOs;
 using AddisMedConnect.Application.Interfaces;
 using AddisMedConnect.Domain.Enums;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.SignalR;
 using System.Security.Claims;
 
 namespace AddisMedConnect.Api.Controllers;
@@ -14,16 +16,16 @@ namespace AddisMedConnect.Api.Controllers;
 public class EmergencyCasesController : ControllerBase
 {
     private readonly IEmergencyService _emergencyService;
+    private readonly IHubContext<EmergencyHub> _emergencyHub;
 
-    public EmergencyCasesController(IEmergencyService emergencyService)
+    public EmergencyCasesController(IEmergencyService emergencyService, IHubContext<EmergencyHub> emergencyHub)
     {
         _emergencyService = emergencyService;
+        _emergencyHub = emergencyHub;
     }
 
     [HttpGet]
     [Authorize(Roles = "Dispatcher,SystemAdmin")]
-    [ProducesResponseType(typeof(IEnumerable<EmergencyCaseDto>), StatusCodes.Status200OK)]
-    [EndpointSummary("Retrieve all emergency cases")]
     public async Task<ActionResult<IEnumerable<EmergencyCaseDto>>> GetAll()
     {
         var cases = await _emergencyService.GetAllCasesAsync();
@@ -90,6 +92,8 @@ public class EmergencyCasesController : ControllerBase
     public async Task<ActionResult<EmergencyCaseDto>> Create([FromBody] CreateEmergencyCaseDto dto)
     {
         var created = await _emergencyService.CreateCaseAsync(dto);
+        await _emergencyHub.Clients.Group($"Hospital_{created.TargetHospitalId}").SendAsync("ReceiveEmergencyDispatch", created);
+        await _emergencyHub.Clients.All.SendAsync("QueueUpdated");
         return CreatedAtAction(nameof(GetByIncidentNumber), new { incidentNumber = created.IncidentNumber }, created);
     }
 
@@ -105,6 +109,8 @@ public class EmergencyCasesController : ControllerBase
         if (!CanAccessHospital(emergencyCase.TargetHospitalId)) return Forbid();
         var success = await _emergencyService.UpdateCaseStatusAsync(incidentNumber, dto.Status);
         if (!success) return NotFound();
+        await _emergencyHub.Clients.Group($"Hospital_{emergencyCase.TargetHospitalId}").SendAsync("QueueUpdated");
+        await _emergencyHub.Clients.All.SendAsync("QueueUpdated");
         return NoContent();
     }
 
@@ -122,6 +128,8 @@ public class EmergencyCasesController : ControllerBase
         {
             var success = await _emergencyService.CompleteTriageAsync(incidentNumber, dto);
             if (!success) return Conflict(new { message = "Only dispatched cases can be admitted through triage." });
+            await _emergencyHub.Clients.Group($"Hospital_{emergencyCase.TargetHospitalId}").SendAsync("QueueUpdated");
+            await _emergencyHub.Clients.All.SendAsync("QueueUpdated");
             return NoContent();
         }
         catch (InvalidOperationException ex)
@@ -138,7 +146,11 @@ public class EmergencyCasesController : ControllerBase
         var emergencyCase = await _emergencyService.GetCaseByIncidentNumberAsync(incidentNumber);
         if (emergencyCase is null) return NotFound();
         if (!CanAccessHospital(emergencyCase.TargetHospitalId)) return Forbid();
-        return await _emergencyService.UpdateCaseStatusAsync(incidentNumber, CaseStatus.Resolved) ? NoContent() : NotFound();
+        var success = await _emergencyService.UpdateCaseStatusAsync(incidentNumber, CaseStatus.Resolved);
+        if (!success) return NotFound();
+        await _emergencyHub.Clients.Group($"Hospital_{emergencyCase.TargetHospitalId}").SendAsync("QueueUpdated");
+        await _emergencyHub.Clients.All.SendAsync("QueueUpdated");
+        return NoContent();
     }
 
     private bool CanAccessHospital(Guid hospitalId) => User.IsInRole("SystemAdmin") || User.FindFirstValue("hospital_id") == hospitalId.ToString();
@@ -166,6 +178,7 @@ public class EmergencyCasesController : ControllerBase
         return Ok(await _emergencyService.FindRecommendedHospitalsAsync(wardType, lat, lng));
     }
 
+
     [HttpGet("available-ambulances")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [EndpointSummary("Fetch all currently available ambulances")]
@@ -186,6 +199,8 @@ public class EmergencyCasesController : ControllerBase
         try
         {
             var result = await _emergencyService.AssignResourcesAsync(incidentNumber, dto.BedId, dto.AmbulanceId);
+            await _emergencyHub.Clients.Group($"Hospital_{result.TargetHospitalId}").SendAsync("ReceiveEmergencyDispatch", result);
+            await _emergencyHub.Clients.All.SendAsync("QueueUpdated");
             return Ok(result);
         }
         catch (KeyNotFoundException)

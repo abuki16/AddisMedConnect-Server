@@ -1,5 +1,6 @@
 using AddisMedConnect.Application.DTOs;
 using AddisMedConnect.Application.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace AddisMedConnect.Api.Controllers;
@@ -34,6 +35,66 @@ public class HospitalsController : ControllerBase
         var hospital = await _hospitalService.GetHospitalByIdAsync(id);
         if (hospital == null) return NotFound();
         return Ok(hospital);
+    }
+
+    [HttpPost]
+    [Authorize(Roles = "SystemAdmin")]
+    [ProducesResponseType(typeof(HospitalDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [EndpointSummary("Register a new partner hospital in the network")]
+    public async Task<ActionResult<HospitalDto>> Create([FromBody] CreateHospitalDto dto)
+    {
+        try
+        {
+            var created = await _hospitalService.CreateHospitalAsync(dto);
+            return CreatedAtAction(nameof(GetHospital), new { id = created.Id }, created);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
+    }
+
+    [HttpPut("{id:guid}")]
+    [Authorize(Roles = "SystemAdmin")]
+    [ProducesResponseType(typeof(HospitalDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [EndpointSummary("Update details, code, contact or location of a partner hospital")]
+    public async Task<ActionResult<HospitalDto>> Update(Guid id, [FromBody] UpdateHospitalDto dto)
+    {
+        try
+        {
+            var updated = await _hospitalService.UpdateHospitalAsync(id, dto);
+            if (updated == null) return NotFound(new { message = $"Hospital with ID '{id}' was not found." });
+            return Ok(updated);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
+    }
+
+    [HttpDelete("{id:guid}")]
+    [Authorize(Roles = "SystemAdmin")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [EndpointSummary("Safely decommission and remove a hospital with zero active emergency cases")]
+    public async Task<IActionResult> Delete(Guid id)
+    {
+        try
+        {
+            var deleted = await _hospitalService.DeleteHospitalAsync(id);
+            if (!deleted) return NotFound(new { message = $"Hospital with ID '{id}' was not found." });
+            return NoContent();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
     }
 
     [HttpGet("{id:guid}/beds")]

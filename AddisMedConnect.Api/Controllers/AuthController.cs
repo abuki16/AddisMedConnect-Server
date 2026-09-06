@@ -30,6 +30,45 @@ public class AuthController(AddisDbContext context, IConfiguration configuration
         if (user is null)
             return Unauthorized(new { message = "Invalid email/username or password." });
 
+        // 1. Check if account is currently locked out
+        if (user.LockoutEnd.HasValue && user.LockoutEnd.Value > DateTime.UtcNow)
+        {
+            var remaining = user.LockoutEnd.Value - DateTime.UtcNow;
+            if (remaining.TotalHours >= 1)
+            {
+                var hours = Math.Max(1, (int)Math.Ceiling(remaining.TotalHours));
+                var days = (int)Math.Ceiling(remaining.TotalDays);
+                var durationStr = days >= 2 ? $"{days} days" : $"{hours} hour(s)";
+                return StatusCode(StatusCodes.Status423Locked, new
+                {
+                    message = $"Security Alert: Your account has been locked for {durationStr} due to repeated failed login attempts. Please contact a System Administrator to unlock your account.",
+                    isLocked = true,
+                    lockoutEnd = user.LockoutEnd,
+                    lockoutTier = user.LockoutTier,
+                    retryAfterSeconds = (int)remaining.TotalSeconds
+                });
+            }
+            else
+            {
+                var minutes = Math.Max(1, (int)Math.Ceiling(remaining.TotalMinutes));
+                var seconds = (int)remaining.TotalSeconds;
+                return StatusCode(StatusCodes.Status423Locked, new
+                {
+                    message = $"Account temporarily blocked due to 5 consecutive failed login attempts. Please try again in {minutes} minute(s) ({seconds} seconds) or contact an administrator.",
+                    isLocked = true,
+                    lockoutEnd = user.LockoutEnd,
+                    lockoutTier = user.LockoutTier,
+                    retryAfterSeconds = seconds
+                });
+            }
+        }
+
+        // Lockout expired - clear LockoutEnd timestamp
+        if (user.LockoutEnd.HasValue && user.LockoutEnd.Value <= DateTime.UtcNow)
+        {
+            user.LockoutEnd = null;
+        }
+
         var hasher = new PasswordHasher<User>();
         var pwd = dto.Password ?? string.Empty;
         var trimmedPwd = pwd.Trim();
@@ -113,7 +152,61 @@ public class AuthController(AddisDbContext context, IConfiguration configuration
         }
 
         if (!verified)
-            return Unauthorized(new { message = "Invalid email or password. (Hint: For abukim@12345, use password Abukiadmin!123)" });
+        {
+            user.FailedLoginAttempts++;
+
+            if (user.LockoutTier == 0 && user.FailedLoginAttempts >= 5)
+            {
+                user.LockoutTier = 1;
+                user.LockoutEnd = DateTime.UtcNow.AddMinutes(5);
+                user.FailedLoginAttempts = 0;
+                await context.SaveChangesAsync();
+
+                return StatusCode(StatusCodes.Status423Locked, new
+                {
+                    message = "Security Alert: Account has been temporarily blocked for 5 minutes due to 5 consecutive failed login attempts.",
+                    isLocked = true,
+                    lockoutEnd = user.LockoutEnd,
+                    lockoutTier = 1,
+                    retryAfterSeconds = 300
+                });
+            }
+            else if (user.LockoutTier >= 1 && user.FailedLoginAttempts >= 5)
+            {
+                user.LockoutTier = 2;
+                user.LockoutEnd = DateTime.UtcNow.AddDays(1);
+                user.FailedLoginAttempts = 0;
+                await context.SaveChangesAsync();
+
+                return StatusCode(StatusCodes.Status423Locked, new
+                {
+                    message = "Security Alert: Account has been locked for 24 hours (1 day) due to repeated failed login attempts. Please contact a System Administrator to unlock your account.",
+                    isLocked = true,
+                    lockoutEnd = user.LockoutEnd,
+                    lockoutTier = 2,
+                    retryAfterSeconds = 86400
+                });
+            }
+            else
+            {
+                await context.SaveChangesAsync();
+                var remaining = 5 - user.FailedLoginAttempts;
+                var nextPenalty = user.LockoutTier == 0 ? "a 5-minute account block" : "a 24-hour security lockout";
+                return Unauthorized(new
+                {
+                    message = $"Invalid password. Warning: {remaining} trial(s) remaining before {nextPenalty}."
+                });
+            }
+        }
+
+        // Reset failed login counter and lockout tier on successful login
+        if (user.FailedLoginAttempts > 0 || user.LockoutTier > 0 || user.LockoutEnd.HasValue)
+        {
+            user.FailedLoginAttempts = 0;
+            user.LockoutTier = 0;
+            user.LockoutEnd = null;
+            await context.SaveChangesAsync();
+        }
 
         var ambulance = await context.Ambulances.SingleOrDefaultAsync(a => a.DriverUserId == user.Id);
         var expires = DateTime.UtcNow.AddHours(8);
@@ -228,6 +321,21 @@ public class AuthController(AddisDbContext context, IConfiguration configuration
         return NoContent();
     }
 
+    [HttpPost("users/{id:guid}/unlock")]
+    [EndpointSummary("Manually unlock a locked user account and reset failed login attempts")]
+    public async Task<ActionResult<UserManagementDto>> UnlockUser(Guid id)
+    {
+        var user = await context.Users.Include(u => u.AssignedHospital).SingleOrDefaultAsync(u => u.Id == id);
+        if (user is null) return NotFound(new { message = "User not found." });
+
+        user.FailedLoginAttempts = 0;
+        user.LockoutEnd = null;
+        user.LockoutTier = 0;
+        await context.SaveChangesAsync();
+
+        return Ok(ToDto(user));
+    }
+
     private static UserManagementDto ToDto(User u) => new(
         u.Id,
         $"{u.FirstName} {u.LastName}".Trim(),
@@ -236,7 +344,11 @@ public class AuthController(AddisDbContext context, IConfiguration configuration
         u.Role.ToString(),
         u.AssignedHospitalId,
         u.AssignedHospital?.Name,
-        u.CreatedAt
+        u.CreatedAt,
+        u.IsLockedOut,
+        u.LockoutEnd,
+        u.FailedLoginAttempts,
+        u.LockoutTier
     );
 
     private const string PasswordRequirementMessage = "Password must be at least 8 characters and include an uppercase letter, lowercase letter, number, and special character.";

@@ -6,7 +6,20 @@ public record LoginDto(string Email, string Password);
 public record AuthenticatedUserDto(Guid Id, string FullName, string Email, string Role, Guid? HospitalId, string? HospitalName, Guid? AmbulanceId, string? PlateNumber);
 public record LoginResponseDto(string AccessToken, DateTime ExpiresAt, AuthenticatedUserDto User);
 public record UpdateAmbulanceLocationDto(double Latitude, double Longitude, string? AddressLabel);
-public record UserManagementDto(Guid Id, string FullName, string Email, string PhoneNumber, string Role, Guid? HospitalId, string? HospitalName, DateTime CreatedAt);
+public record UserManagementDto(
+    Guid Id,
+    string FullName,
+    string Email,
+    string PhoneNumber,
+    string Role,
+    Guid? HospitalId,
+    string? HospitalName,
+    DateTime CreatedAt,
+    bool IsLockedOut = false,
+    DateTime? LockoutEnd = null,
+    int FailedLoginAttempts = 0,
+    int LockoutTier = 0
+);
 
 public class CreateUserDto
 {

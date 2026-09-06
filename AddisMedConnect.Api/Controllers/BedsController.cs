@@ -1,3 +1,4 @@
+using AddisMedConnect.Application.DTOs;
 using AddisMedConnect.Application.Interfaces;
 using AddisMedConnect.Domain.Entities;
 using AddisMedConnect.Domain.Enums;
@@ -18,6 +19,7 @@ public class BedsController : ControllerBase
     {
         _bedService = bedService;
     }
+
     // POST: api/beds
     [HttpPost]
     [Authorize(Roles = "SystemAdmin,DischargeClerk")]
@@ -37,6 +39,7 @@ public class BedsController : ControllerBase
             return NotFound(new { message = ex.Message });
         }
     }
+
     // GET: api/beds
     [HttpGet]
     [ProducesResponseType(typeof(IEnumerable<Bed>), StatusCodes.Status200OK)]
@@ -80,6 +83,53 @@ public class BedsController : ControllerBase
         if (!success) return NotFound();
 
         return NoContent();
+    }
+
+    // PUT: api/beds/{bedId}
+    [HttpPut("{bedId:guid}")]
+    [Authorize(Roles = "SystemAdmin")]
+    [ProducesResponseType(typeof(Bed), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [EndpointSummary("Update hospital bed details, ward, code, or status")]
+    public async Task<ActionResult<Bed>> UpdateBed(Guid bedId, [FromBody] UpdateBedDto dto)
+    {
+        try
+        {
+            var updated = await _bedService.UpdateBedAsync(bedId, dto);
+            if (updated == null) return NotFound(new { message = $"Bed with ID '{bedId}' was not found." });
+            return Ok(updated);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
+    }
+
+    // DELETE: api/beds/{bedId}
+    [HttpDelete("{bedId:guid}")]
+    [Authorize(Roles = "SystemAdmin")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [EndpointSummary("Permanently decommission and delete a bed from hospital inventory")]
+    public async Task<IActionResult> DeleteBed(Guid bedId)
+    {
+        try
+        {
+            var success = await _bedService.DeleteBedAsync(bedId);
+            if (!success) return NotFound(new { message = $"Bed with ID '{bedId}' was not found." });
+            return NoContent();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
     }
 }
 

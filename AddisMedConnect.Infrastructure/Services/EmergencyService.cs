@@ -10,10 +10,12 @@ namespace AddisMedConnect.Infrastructure.Services;
 public class EmergencyService : IEmergencyService
 {
     private readonly AddisDbContext _context;
+    private readonly IBedNotificationService _bedNotificationService;
 
-    public EmergencyService(AddisDbContext context)
+    public EmergencyService(AddisDbContext context, IBedNotificationService bedNotificationService)
     {
         _context = context;
+        _bedNotificationService = bedNotificationService;
     }
 
     public async Task<IEnumerable<EmergencyCaseDto>> GetAllCasesAsync()
@@ -157,6 +159,8 @@ public class EmergencyService : IEmergencyService
             throw new KeyNotFoundException($"Hospital with identifier '{dto.TargetHospitalId}' was not found.");
         }
 
+        var incidentNo = $"INC-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString()[..4].ToUpper()}";
+
         Guid? resolvedBedGuid = null;
         if (!string.IsNullOrEmpty(dto.AssignedBedId))
         {
@@ -181,8 +185,10 @@ public class EmergencyService : IEmergencyService
             }
 
             bed.Status = BedStatus.Reserved;
+            bed.CurrentCaseId = incidentNo;
             bed.LastStatusUpdate = DateTime.UtcNow;
             resolvedBedGuid = bed.Id;
+            await _bedNotificationService.NotifyBedStatusChangedAsync(bed.HospitalId, bed.Id, BedStatus.Reserved.ToString());
         }
 
         Guid? resolvedAmbulanceGuid = null;
@@ -207,10 +213,9 @@ public class EmergencyService : IEmergencyService
                 throw new KeyNotFoundException($"Ambulance with identifier '{dto.AssignedAmbulanceId}' was not found.");
             }
 
+            ambulance.IsAvailable = false;
             resolvedAmbulanceGuid = ambulance.Id;
         }
-
-        var incidentNo = $"INC-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString()[..4].ToUpper()}";
 
         var entity = new EmergencyCase
         {
@@ -254,11 +259,27 @@ public class EmergencyService : IEmergencyService
 
             if (ec.AssignedBed != null)
             {
+                var hId = ec.AssignedBed.HospitalId;
+                var bId = ec.AssignedBed.Id;
                 ec.AssignedBed.Status = BedStatus.Available;
                 ec.AssignedBed.LastStatusUpdate = DateTime.UtcNow;
                 ec.AssignedBed.CurrentCaseId = null;
                 ec.AssignedBedId = null;
+                await _bedNotificationService.NotifyBedStatusChangedAsync(hId, bId, BedStatus.Available.ToString());
             }
+            else if (ec.AssignedBedId.HasValue)
+            {
+                var bed = await _context.Beds.FindAsync(ec.AssignedBedId.Value);
+                if (bed != null)
+                {
+                    bed.Status = BedStatus.Available;
+                    bed.LastStatusUpdate = DateTime.UtcNow;
+                    bed.CurrentCaseId = null;
+                    await _bedNotificationService.NotifyBedStatusChangedAsync(bed.HospitalId, bed.Id, BedStatus.Available.ToString());
+                }
+                ec.AssignedBedId = null;
+            }
+
             if (ec.AssignedAmbulanceId is not null)
             {
                 var ambulance = await _context.Ambulances.FindAsync(ec.AssignedAmbulanceId);
@@ -283,35 +304,51 @@ public class EmergencyService : IEmergencyService
         ec.Priority = dto.Priority;
         ec.Status = CaseStatus.Admitted;
 
-        if (dto.ConfirmedBedId is not null && ec.AssignedBedId != dto.ConfirmedBedId)
+        if (!string.IsNullOrWhiteSpace(dto.VitalSigns))
         {
-            if (ec.AssignedBed != null)
+            ec.IncidentReason = $"{ec.IncidentReason} | [Vitals: {dto.VitalSigns.Trim()}]";
+        }
+        if (!string.IsNullOrWhiteSpace(dto.TriageNotes))
+        {
+            ec.IncidentReason = $"{ec.IncidentReason} | [Triage: {dto.TriageNotes.Trim()}]";
+        }
+
+        var targetBedId = dto.ConfirmedBedId ?? ec.AssignedBedId;
+        if (targetBedId.HasValue)
+        {
+            // If the triage nurse selected an alternative bed than previously assigned, release the previous bed
+            if (ec.AssignedBedId.HasValue && ec.AssignedBedId.Value != targetBedId.Value)
             {
-                ec.AssignedBed.Status = BedStatus.Available;
-                ec.AssignedBed.CurrentCaseId = null;
+                var prevBed = await _context.Beds.FindAsync(ec.AssignedBedId.Value);
+                if (prevBed != null)
+                {
+                    prevBed.Status = BedStatus.Available;
+                    prevBed.CurrentCaseId = null;
+                    prevBed.LastStatusUpdate = DateTime.UtcNow;
+                    await _bedNotificationService.NotifyBedStatusChangedAsync(prevBed.HospitalId, prevBed.Id, BedStatus.Available.ToString());
+                }
             }
 
-            var newBed = await _context.Beds
-                .Include(b => b.Hospital)
-                .FirstOrDefaultAsync(b => b.Id == dto.ConfirmedBedId && b.HospitalId == ec.TargetHospitalId);
+            var targetBed = await _context.Beds.FindAsync(targetBedId.Value);
+            if (targetBed != null)
+            {
+                if (targetBed.HospitalId != ec.TargetHospitalId)
+                    throw new InvalidOperationException("The selected bed belongs to a different hospital.");
 
-            if (newBed == null || newBed.Status != BedStatus.Available)
-                throw new InvalidOperationException("The selected bed is no longer available at this hospital.");
+                if (ec.AssignedBedId != targetBed.Id && targetBed.Status != BedStatus.Available)
+                    throw new InvalidOperationException("The selected bed is no longer available at this hospital.");
 
-            newBed.Status = BedStatus.Occupied;
-            newBed.LastStatusUpdate = DateTime.UtcNow;
-            newBed.CurrentCaseId = incidentNumber;
+                targetBed.Status = BedStatus.Occupied;
+                targetBed.CurrentCaseId = incidentNumber;
+                targetBed.LastStatusUpdate = DateTime.UtcNow;
+                ec.AssignedBedId = targetBed.Id;
 
-            ec.AssignedBedId = dto.ConfirmedBedId;
+                await _bedNotificationService.NotifyBedStatusChangedAsync(targetBed.HospitalId, targetBed.Id, BedStatus.Occupied.ToString());
+            }
         }
-        else if (ec.AssignedBed != null)
-        {
-            ec.AssignedBed.Status = BedStatus.Occupied;
-            ec.AssignedBed.LastStatusUpdate = DateTime.UtcNow;
-        }
 
-        // The patient is now checked in. This ambulance must immediately return to the available fleet.
-        if (ec.AssignedAmbulanceId is not null)
+        // The patient is now checked in. Release ambulance if requested.
+        if (dto.ReleaseAmbulance && ec.AssignedAmbulanceId is not null)
         {
             var ambulance = await _context.Ambulances.FindAsync(ec.AssignedAmbulanceId);
             if (ambulance is not null)
@@ -428,6 +465,7 @@ public class EmergencyService : IEmergencyService
                 oldBed.Status = BedStatus.Available;
                 oldBed.CurrentCaseId = null;
                 oldBed.LastStatusUpdate = DateTime.UtcNow;
+                await _bedNotificationService.NotifyBedStatusChangedAsync(oldBed.HospitalId, oldBed.Id, BedStatus.Available.ToString());
             }
         }
 
@@ -441,6 +479,7 @@ public class EmergencyService : IEmergencyService
         bed.Status = BedStatus.Reserved;
         bed.CurrentCaseId = incidentNumber;
         bed.LastStatusUpdate = DateTime.UtcNow;
+        await _bedNotificationService.NotifyBedStatusChangedAsync(bed.HospitalId, bed.Id, BedStatus.Reserved.ToString());
 
         var ambulance = await _context.Ambulances.FirstOrDefaultAsync(a => a.Id == ambulanceId);
         if (ambulance == null)
