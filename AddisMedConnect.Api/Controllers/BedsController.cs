@@ -1,9 +1,11 @@
+using AddisMedConnect.Api.Hubs;
 using AddisMedConnect.Application.DTOs;
 using AddisMedConnect.Application.Interfaces;
 using AddisMedConnect.Domain.Entities;
 using AddisMedConnect.Domain.Enums;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.SignalR;
 
 namespace AddisMedConnect.Api.Controllers;
 
@@ -14,10 +16,12 @@ namespace AddisMedConnect.Api.Controllers;
 public class BedsController : ControllerBase
 {
     private readonly IBedService _bedService;
+    private readonly IHubContext<EmergencyHub> _emergencyHub;
 
-    public BedsController(IBedService bedService)
+    public BedsController(IBedService bedService, IHubContext<EmergencyHub> emergencyHub)
     {
         _bedService = bedService;
+        _emergencyHub = emergencyHub;
     }
 
     // POST: api/beds
@@ -32,6 +36,7 @@ public class BedsController : ControllerBase
         try
         {
             var createdBed = await _bedService.CreateBedAsync(dto);
+            await _emergencyHub.Clients.All.SendAsync("MetricsUpdated");
             return CreatedAtAction(nameof(GetBedsByHospital), new { hospitalId = createdBed.HospitalId }, createdBed);
         }
         catch (KeyNotFoundException ex)
@@ -82,6 +87,7 @@ public class BedsController : ControllerBase
         var success = await _bedService.UpdateBedStatusAsync(bedId, (BedStatus)dto.Status);
         if (!success) return NotFound();
 
+        await _emergencyHub.Clients.All.SendAsync("MetricsUpdated");
         return NoContent();
     }
 
@@ -99,6 +105,7 @@ public class BedsController : ControllerBase
         {
             var updated = await _bedService.UpdateBedAsync(bedId, dto);
             if (updated == null) return NotFound(new { message = $"Bed with ID '{bedId}' was not found." });
+            await _emergencyHub.Clients.All.SendAsync("MetricsUpdated");
             return Ok(updated);
         }
         catch (KeyNotFoundException ex)
@@ -124,6 +131,7 @@ public class BedsController : ControllerBase
         {
             var success = await _bedService.DeleteBedAsync(bedId);
             if (!success) return NotFound(new { message = $"Bed with ID '{bedId}' was not found." });
+            await _emergencyHub.Clients.All.SendAsync("MetricsUpdated");
             return NoContent();
         }
         catch (InvalidOperationException ex)

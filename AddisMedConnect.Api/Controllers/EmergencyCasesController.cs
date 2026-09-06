@@ -99,6 +99,7 @@ public class EmergencyCasesController : ControllerBase
         }
         await _emergencyHub.Clients.All.SendAsync("ReceiveEmergencyDispatch", created);
         await _emergencyHub.Clients.All.SendAsync("QueueUpdated");
+        await _emergencyHub.Clients.All.SendAsync("MetricsUpdated");
         return CreatedAtAction(nameof(GetByIncidentNumber), new { incidentNumber = created.IncidentNumber }, created);
     }
 
@@ -116,6 +117,7 @@ public class EmergencyCasesController : ControllerBase
         if (!success) return NotFound();
         await _emergencyHub.Clients.Group($"Hospital_{emergencyCase.TargetHospitalId}").SendAsync("QueueUpdated");
         await _emergencyHub.Clients.All.SendAsync("QueueUpdated");
+        await _emergencyHub.Clients.All.SendAsync("MetricsUpdated");
         return NoContent();
     }
 
@@ -138,6 +140,7 @@ public class EmergencyCasesController : ControllerBase
             await _emergencyHub.Clients.Group($"Hospital_{emergencyCase.TargetHospitalId}").SendAsync("QueueUpdated");
             await _emergencyHub.Clients.All.SendAsync("QueueUpdated");
             await _emergencyHub.Clients.All.SendAsync("AmbulanceFleetUpdated");
+            await _emergencyHub.Clients.All.SendAsync("MetricsUpdated");
 
             if (dto.ReleaseAmbulance && assignedAmbulanceId.HasValue)
             {
@@ -173,6 +176,7 @@ public class EmergencyCasesController : ControllerBase
         if (!success) return NotFound();
         await _emergencyHub.Clients.Group($"Hospital_{emergencyCase.TargetHospitalId}").SendAsync("QueueUpdated");
         await _emergencyHub.Clients.All.SendAsync("QueueUpdated");
+        await _emergencyHub.Clients.All.SendAsync("MetricsUpdated");
         return NoContent();
     }
 
