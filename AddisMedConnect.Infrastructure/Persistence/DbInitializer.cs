@@ -120,16 +120,14 @@ public static class DbInitializer
         await context.Hospitals.AddRangeAsync(tikurAnbessa, stPaul, aabet, zewditu, yekatit, amin, mcm);
 
         // 2. Seed Initial Beds for these facilities
-        var beds = new List<Bed>
+        var hospitals = new[] { tikurAnbessa, stPaul, aabet, zewditu, yekatit, amin, mcm };
+        var beds = new List<Bed>();
+        foreach (var hosp in hospitals)
         {
-            new() { BedNumber = "ICU-01", WardType = "ICU", Status = BedStatus.Available, Hospital = tikurAnbessa },
-            new() { BedNumber = "ICU-02", WardType = "ICU", Status = BedStatus.Available, Hospital = tikurAnbessa },
-            new() { BedNumber = "EMG-01", WardType = "Emergency", Status = BedStatus.Available, Hospital = tikurAnbessa },
-            new() { BedNumber = "ICU-01", WardType = "ICU", Status = BedStatus.Available, Hospital = stPaul },
-            new() { BedNumber = "EMG-01", WardType = "Emergency", Status = BedStatus.Available, Hospital = stPaul },
-            new() { BedNumber = "EMG-01", WardType = "Emergency", Status = BedStatus.Available, Hospital = amin },
-            new() { BedNumber = "ICU-01", WardType = "ICU", Status = BedStatus.Available, Hospital = aabet }
-        };
+            beds.Add(new() { BedNumber = "ICU-01", WardType = "ICU", Code = $"{hosp.Code}-ICU-01", Status = BedStatus.Available, Hospital = hosp });
+            beds.Add(new() { BedNumber = "EMG-01", WardType = "Emergency", Code = $"{hosp.Code}-EMG-01", Status = BedStatus.Available, Hospital = hosp });
+            beds.Add(new() { BedNumber = "GEN-01", WardType = "General", Code = $"{hosp.Code}-GEN-01", Status = BedStatus.Available, Hospital = hosp });
+        }
 
         await context.Beds.AddRangeAsync(beds);
         var hasher = new PasswordHasher<User>();

@@ -17,5 +17,7 @@ public record EmergencyCaseDto(
     Guid? AssignedAmbulanceId,
     string? AmbulancePlateNumber,
     string? PickupAddress,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    double? PickupLatitude = null,
+    double? PickupLongitude = null
 );

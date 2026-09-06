@@ -20,5 +20,21 @@ namespace AddisMedConnect.Api.Hubs
         {
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"Hospital_{hospitalId}");
         }
+
+        /// <summary>
+        /// Allows an ambulance driver client to join their vehicle's targeted broadcast channel.
+        /// </summary>
+        public async Task JoinAmbulanceGroup(string ambulanceId)
+        {
+            await Groups.AddToGroupAsync(Context.ConnectionId, $"Ambulance_{ambulanceId}");
+        }
+
+        /// <summary>
+        /// Allows an ambulance driver client to leave their vehicle's broadcast channel.
+        /// </summary>
+        public async Task LeaveAmbulanceGroup(string ambulanceId)
+        {
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"Ambulance_{ambulanceId}");
+        }
     }
 }

@@ -39,7 +39,9 @@ public class EmergencyService : IEmergencyService
                 ec.AssignedAmbulanceId,
                 ec.AssignedAmbulance != null ? ec.AssignedAmbulance.PlateNumber : null,
                 ec.PickupAddress,
-                ec.CreatedAt
+                ec.CreatedAt,
+                ec.PickupLatitude,
+                ec.PickupLongitude
             ))
             .ToListAsync();
     }
@@ -50,7 +52,11 @@ public class EmergencyService : IEmergencyService
             .Include(ec => ec.TargetHospital)
             .Include(ec => ec.AssignedBed)
             .Include(ec => ec.AssignedAmbulance)
-            .Where(ec => ec.TargetHospitalId == hospitalId && ec.Status == CaseStatus.Dispatched)
+            .Where(ec => ec.TargetHospitalId == hospitalId &&
+                         (ec.Status == CaseStatus.Dispatched ||
+                          ec.Status == CaseStatus.InTransit ||
+                          ec.Status == CaseStatus.ArrivedAtTriage ||
+                          ec.Status == CaseStatus.PendingTriage))
             .Select(ec => new EmergencyCaseDto(
                 ec.IncidentNumber,
                 ec.CallerName,
@@ -66,7 +72,9 @@ public class EmergencyService : IEmergencyService
                 ec.AssignedAmbulanceId,
                 ec.AssignedAmbulance != null ? ec.AssignedAmbulance.PlateNumber : null,
                 ec.PickupAddress,
-                ec.CreatedAt
+                ec.CreatedAt,
+                ec.PickupLatitude,
+                ec.PickupLongitude
             ))
             .ToListAsync();
     }
@@ -78,7 +86,11 @@ public class EmergencyService : IEmergencyService
             .Include(ec => ec.AssignedBed)
             .Include(ec => ec.AssignedAmbulance)
             .Where(ec => ec.TargetHospitalId == hospitalId &&
-                         (ec.Status == CaseStatus.Dispatched || ec.Status == CaseStatus.Admitted))
+                         (ec.Status == CaseStatus.Dispatched ||
+                          ec.Status == CaseStatus.InTransit ||
+                          ec.Status == CaseStatus.ArrivedAtTriage ||
+                          ec.Status == CaseStatus.PendingTriage ||
+                          ec.Status == CaseStatus.Admitted))
             .Select(ec => new EmergencyCaseDto(
                 ec.IncidentNumber,
                 ec.CallerName,
@@ -94,7 +106,9 @@ public class EmergencyService : IEmergencyService
                 ec.AssignedAmbulanceId,
                 ec.AssignedAmbulance != null ? ec.AssignedAmbulance.PlateNumber : null,
                 ec.PickupAddress,
-                ec.CreatedAt
+                ec.CreatedAt,
+                ec.PickupLatitude,
+                ec.PickupLongitude
             ))
             .ToListAsync();
     }
@@ -124,20 +138,29 @@ public class EmergencyService : IEmergencyService
             ec.AssignedAmbulanceId,
             ec.AssignedAmbulance?.PlateNumber,
             ec.PickupAddress,
-            ec.CreatedAt
+            ec.CreatedAt,
+            ec.PickupLatitude,
+            ec.PickupLongitude
         );
     }
 
     public async Task<int> GetPendingTriageCountAsync()
     {
         return await _context.EmergencyCases
-            .CountAsync(c => c.Status == CaseStatus.Dispatched);
+            .CountAsync(c => c.Status == CaseStatus.Dispatched ||
+                             c.Status == CaseStatus.InTransit ||
+                             c.Status == CaseStatus.ArrivedAtTriage ||
+                             c.Status == CaseStatus.PendingTriage);
     }
 
     public async Task<int> GetPendingTriageCountByHospitalAsync(Guid hospitalId)
     {
         return await _context.EmergencyCases
-            .CountAsync(ec => ec.TargetHospitalId == hospitalId && ec.Status == CaseStatus.Dispatched);
+            .CountAsync(ec => ec.TargetHospitalId == hospitalId &&
+                              (ec.Status == CaseStatus.Dispatched ||
+                               ec.Status == CaseStatus.InTransit ||
+                               ec.Status == CaseStatus.ArrivedAtTriage ||
+                               ec.Status == CaseStatus.PendingTriage));
     }
 
     public async Task<EmergencyCaseDto> CreateCaseAsync(CreateEmergencyCaseDto dto)
@@ -283,7 +306,29 @@ public class EmergencyService : IEmergencyService
             if (ec.AssignedAmbulanceId is not null)
             {
                 var ambulance = await _context.Ambulances.FindAsync(ec.AssignedAmbulanceId);
-                if (ambulance is not null) ambulance.IsAvailable = true;
+                if (ambulance is not null)
+                {
+                    ambulance.IsAvailable = true;
+                    var hospital = await _context.Hospitals.FindAsync(ec.TargetHospitalId);
+                    if (hospital != null && hospital.Latitude.HasValue && hospital.Longitude.HasValue)
+                    {
+                        ambulance.CurrentLatitude = hospital.Latitude.Value;
+                        ambulance.CurrentLongitude = hospital.Longitude.Value;
+                        ambulance.LastLocationUpdatedAt = DateTime.UtcNow;
+                    }
+
+                    _context.AmbulanceLocations.Add(new AmbulanceLocation
+                    {
+                        AmbulanceId = ambulance.Id,
+                        Latitude = ambulance.CurrentLatitude ?? 9.0300,
+                        Longitude = ambulance.CurrentLongitude ?? 38.7400,
+                        AddressLabel = hospital != null
+                            ? $"Stationed at {hospital.Name} ({hospital.Address ?? hospital.SubCity})"
+                            : "Released after mission completion",
+                        IncidentNumber = ec.IncidentNumber,
+                        RecordedAt = DateTime.UtcNow
+                    });
+                }
                 ec.AssignedAmbulanceId = null;
             }
         }
@@ -299,7 +344,10 @@ public class EmergencyService : IEmergencyService
                 .ThenInclude(b => b!.Hospital)
             .FirstOrDefaultAsync(x => x.IncidentNumber == incidentNumber);
 
-        if (ec == null || ec.Status != CaseStatus.Dispatched) return false;
+        if (ec == null || (ec.Status != CaseStatus.Dispatched &&
+                           ec.Status != CaseStatus.InTransit &&
+                           ec.Status != CaseStatus.ArrivedAtTriage &&
+                           ec.Status != CaseStatus.PendingTriage)) return false;
 
         ec.Priority = dto.Priority;
         ec.Status = CaseStatus.Admitted;
@@ -355,18 +403,26 @@ public class EmergencyService : IEmergencyService
             {
                 ambulance.IsAvailable = true;
 
-                // Preserve the last known drop-off point as an auditable release event.
-                if (ambulance.CurrentLatitude is not null && ambulance.CurrentLongitude is not null)
+                // Associate the ambulance location to the hospital where the triage nurse worked
+                var hospital = await _context.Hospitals.FindAsync(ec.TargetHospitalId);
+                if (hospital != null && hospital.Latitude.HasValue && hospital.Longitude.HasValue)
                 {
-                    _context.AmbulanceLocations.Add(new AmbulanceLocation
-                    {
-                        AmbulanceId = ambulance.Id,
-                        Latitude = ambulance.CurrentLatitude.Value,
-                        Longitude = ambulance.CurrentLongitude.Value,
-                        AddressLabel = "Released after hospital arrival",
-                        IncidentNumber = ec.IncidentNumber
-                    });
+                    ambulance.CurrentLatitude = hospital.Latitude.Value;
+                    ambulance.CurrentLongitude = hospital.Longitude.Value;
+                    ambulance.LastLocationUpdatedAt = DateTime.UtcNow;
                 }
+
+                _context.AmbulanceLocations.Add(new AmbulanceLocation
+                {
+                    AmbulanceId = ambulance.Id,
+                    Latitude = ambulance.CurrentLatitude ?? 9.0300,
+                    Longitude = ambulance.CurrentLongitude ?? 38.7400,
+                    AddressLabel = hospital != null
+                        ? $"Stationed at {hospital.Name} ({hospital.Address ?? hospital.SubCity})"
+                        : "Released after hospital triage arrival",
+                    IncidentNumber = ec.IncidentNumber,
+                    RecordedAt = DateTime.UtcNow
+                });
             }
             ec.AssignedAmbulanceId = null;
         }
@@ -443,6 +499,127 @@ public class EmergencyService : IEmergencyService
         return await _context.Ambulances
             .Where(a => !busyAmbulanceIds.Contains(a.Id))
             .ToListAsync();
+    }
+
+    public async Task<IEnumerable<RecommendedAmbulanceDto>> GetRecommendedAmbulancesAsync(string incidentNumber)
+    {
+        var emergencyCase = await _context.EmergencyCases
+            .Include(c => c.TargetHospital)
+            .FirstOrDefaultAsync(c => c.IncidentNumber == incidentNumber);
+
+        if (emergencyCase == null)
+            throw new KeyNotFoundException($"Emergency case {incidentNumber} not found.");
+
+        var targetHospital = emergencyCase.TargetHospital;
+        var hLat = targetHospital?.Latitude;
+        var hLng = targetHospital?.Longitude;
+        var hName = targetHospital?.Name ?? "Assigned Hospital";
+
+        var pLat = emergencyCase.PickupLatitude;
+        var pLng = emergencyCase.PickupLongitude;
+
+        // An ambulance is busy if assigned to another active (unresolved, uncancelled) case
+        var busyAmbulanceIds = await _context.EmergencyCases
+            .Where(ec => ec.AssignedAmbulanceId != null &&
+                         ec.IncidentNumber != incidentNumber &&
+                         ec.Status != CaseStatus.Resolved &&
+                         ec.Status != CaseStatus.Cancelled)
+            .Select(ec => ec.AssignedAmbulanceId!.Value)
+            .ToListAsync();
+
+        var availableAmbulances = await _context.Ambulances
+            .Where(a => !busyAmbulanceIds.Contains(a.Id))
+            .ToListAsync();
+
+        var items = new List<RecommendedAmbulanceDto>();
+
+        foreach (var amb in availableAmbulances)
+        {
+            double? distHosp = null;
+            if (hLat.HasValue && hLng.HasValue && amb.CurrentLatitude.HasValue && amb.CurrentLongitude.HasValue)
+            {
+                distHosp = Math.Round(HaversineKilometres(amb.CurrentLatitude.Value, amb.CurrentLongitude.Value, hLat.Value, hLng.Value), 2);
+            }
+
+            double? distPatient = null;
+            if (pLat.HasValue && pLng.HasValue && amb.CurrentLatitude.HasValue && amb.CurrentLongitude.HasValue)
+            {
+                distPatient = Math.Round(HaversineKilometres(amb.CurrentLatitude.Value, amb.CurrentLongitude.Value, pLat.Value, pLng.Value), 2);
+            }
+            else if (distHosp.HasValue)
+            {
+                distPatient = distHosp;
+            }
+
+            int? etaMinutes = null;
+            if (distPatient.HasValue)
+            {
+                etaMinutes = Math.Max(3, (int)Math.Ceiling(distPatient.Value / 30.0 * 60)); // ~30 km/h city average
+            }
+
+            // Within 400m of target hospital grounds
+            var isAtTargetHospital = distHosp.HasValue && distHosp.Value <= 0.40;
+
+            string badge;
+            string reason;
+            int priority;
+
+            if (isAtTargetHospital)
+            {
+                badge = "🏥 Stationed at Assigned Hospital";
+                reason = $"Unit currently at {hName}. Instant deployment from destination hospital grounds (0 km transfer).";
+                priority = 1;
+            }
+            else
+            {
+                badge = "🚑 Active Fleet Unit";
+                reason = distPatient.HasValue
+                    ? $"Located {distPatient.Value:F1} km from scene (~{etaMinutes} min ETA)."
+                    : "Available fleet vehicle ready for dispatch.";
+                priority = 3;
+            }
+
+            items.Add(new RecommendedAmbulanceDto(
+                amb.Id,
+                amb.PlateNumber,
+                amb.DriverName,
+                amb.PhoneNumber,
+                amb.CurrentLatitude,
+                amb.CurrentLongitude,
+                amb.IsAvailable,
+                isAtTargetHospital,
+                isAtTargetHospital ? hName : null,
+                distHosp,
+                distPatient,
+                etaMinutes,
+                badge,
+                reason,
+                priority
+            ));
+        }
+
+        // Among non-hospital stationed units, identify the closest to patient
+        var nonHospitalUnits = items.Where(i => !i.IsAtTargetHospital && i.DistanceToPatientKm.HasValue).ToList();
+        if (nonHospitalUnits.Count > 0)
+        {
+            var closest = nonHospitalUnits.OrderBy(i => i.DistanceToPatientKm!.Value).First();
+            var index = items.FindIndex(i => i.Id == closest.Id);
+            if (index >= 0)
+            {
+                items[index] = items[index] with
+                {
+                    RecommendationBadge = "⚡ Nearest to Patient",
+                    RecommendationReason = $"Fastest wheels-to-scene unit ({closest.DistanceToPatientKm:F1} km, ~{closest.EstimatedMinutesToPatient} min ETA).",
+                    PriorityRank = 2
+                };
+            }
+        }
+
+        return items
+            .OrderBy(i => i.PriorityRank)
+            .ThenBy(i => i.DistanceToPatientKm ?? double.MaxValue)
+            .ThenBy(i => i.PlateNumber)
+            .ToList();
     }
 
     public async Task<EmergencyCaseDto> AssignResourcesAsync(string incidentNumber, Guid bedId, Guid ambulanceId)

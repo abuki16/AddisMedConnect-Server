@@ -93,6 +93,11 @@ public class EmergencyCasesController : ControllerBase
     {
         var created = await _emergencyService.CreateCaseAsync(dto);
         await _emergencyHub.Clients.Group($"Hospital_{created.TargetHospitalId}").SendAsync("ReceiveEmergencyDispatch", created);
+        if (created.AssignedAmbulanceId.HasValue)
+        {
+            await _emergencyHub.Clients.Group($"Ambulance_{created.AssignedAmbulanceId.Value}").SendAsync("ReceiveEmergencyDispatch", created);
+        }
+        await _emergencyHub.Clients.All.SendAsync("ReceiveEmergencyDispatch", created);
         await _emergencyHub.Clients.All.SendAsync("QueueUpdated");
         return CreatedAtAction(nameof(GetByIncidentNumber), new { incidentNumber = created.IncidentNumber }, created);
     }
@@ -126,10 +131,28 @@ public class EmergencyCasesController : ControllerBase
         if (!CanAccessHospital(emergencyCase.TargetHospitalId)) return Forbid();
         try
         {
+            var assignedAmbulanceId = emergencyCase.AssignedAmbulanceId;
             var success = await _emergencyService.CompleteTriageAsync(incidentNumber, dto);
             if (!success) return Conflict(new { message = "Only dispatched cases can be admitted through triage." });
+
             await _emergencyHub.Clients.Group($"Hospital_{emergencyCase.TargetHospitalId}").SendAsync("QueueUpdated");
             await _emergencyHub.Clients.All.SendAsync("QueueUpdated");
+            await _emergencyHub.Clients.All.SendAsync("AmbulanceFleetUpdated");
+
+            if (dto.ReleaseAmbulance && assignedAmbulanceId.HasValue)
+            {
+                var releasePayload = new
+                {
+                    ambulanceId = assignedAmbulanceId.Value,
+                    hospitalId = emergencyCase.TargetHospitalId,
+                    hospitalName = emergencyCase.TargetHospitalName
+                };
+                await _emergencyHub.Clients.Group($"Ambulance_{assignedAmbulanceId.Value}")
+                    .SendAsync("AmbulanceReleased", releasePayload);
+                await _emergencyHub.Clients.All
+                    .SendAsync("AmbulanceReleased", releasePayload);
+            }
+
             return NoContent();
         }
         catch (InvalidOperationException ex)
@@ -139,7 +162,7 @@ public class EmergencyCasesController : ControllerBase
     }
 
     [HttpPost("{incidentNumber}/discharge")]
-    [Authorize(Roles = "DischargeClerk,SystemAdmin")]
+    [Authorize(Roles = "TriageNurse,DischargeClerk,SystemAdmin")]
     [EndpointSummary("Close a healed or transferred admission and free its occupied bed")]
     public async Task<IActionResult> Discharge(string incidentNumber)
     {
@@ -188,6 +211,24 @@ public class EmergencyCasesController : ControllerBase
         return Ok(ambulances);
     }
 
+    [HttpGet("{incidentNumber}/recommended-ambulances")]
+    [Authorize(Roles = "Dispatcher,SystemAdmin")]
+    [ProducesResponseType(typeof(IEnumerable<RecommendedAmbulanceDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [EndpointSummary("Rank available ambulances for an incident by hospital stationing and patient proximity")]
+    public async Task<ActionResult<IEnumerable<RecommendedAmbulanceDto>>> GetRecommendedAmbulances(string incidentNumber)
+    {
+        try
+        {
+            var recommended = await _emergencyService.GetRecommendedAmbulancesAsync(incidentNumber);
+            return Ok(recommended);
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+    }
+
     [HttpPost("{incidentNumber}/assign")]
     [Authorize(Roles = "Dispatcher,SystemAdmin")]
     [ProducesResponseType(typeof(EmergencyCaseDto), StatusCodes.Status200OK)]
@@ -200,6 +241,8 @@ public class EmergencyCasesController : ControllerBase
         {
             var result = await _emergencyService.AssignResourcesAsync(incidentNumber, dto.BedId, dto.AmbulanceId);
             await _emergencyHub.Clients.Group($"Hospital_{result.TargetHospitalId}").SendAsync("ReceiveEmergencyDispatch", result);
+            await _emergencyHub.Clients.Group($"Ambulance_{dto.AmbulanceId}").SendAsync("ReceiveEmergencyDispatch", result);
+            await _emergencyHub.Clients.All.SendAsync("ReceiveEmergencyDispatch", result);
             await _emergencyHub.Clients.All.SendAsync("QueueUpdated");
             return Ok(result);
         }

@@ -1,8 +1,10 @@
 using AddisMedConnect.Domain.Entities;
 using AddisMedConnect.Infrastructure.Persistence;
+using AddisMedConnect.Api.Hubs;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.SignalR;
 using System.Security.Claims;
 
 namespace AddisMedConnect.Api.Controllers;
@@ -13,10 +15,12 @@ namespace AddisMedConnect.Api.Controllers;
 public class AmbulancesController : ControllerBase
 {
     private readonly AddisDbContext _context;
+    private readonly IHubContext<EmergencyHub> _emergencyHub;
 
-    public AmbulancesController(AddisDbContext context)
+    public AmbulancesController(AddisDbContext context, IHubContext<EmergencyHub> emergencyHub)
     {
         _context = context;
+        _emergencyHub = emergencyHub;
     }
 
     [HttpGet]
@@ -181,13 +185,84 @@ public class AmbulancesController : ControllerBase
         var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
         var ambulance = await _context.Ambulances.SingleOrDefaultAsync(a => a.DriverUserId == userId);
         if (ambulance is null) return NotFound(new { message = "No ambulance is linked to this driver account." });
-        var assignment = await _context.EmergencyCases.Include(c => c.TargetHospital)
+
+        var assignment = await _context.EmergencyCases
+            .Include(c => c.TargetHospital)
+            .Include(c => c.AssignedBed)
             .Where(c => c.AssignedAmbulanceId == ambulance.Id &&
                         (c.Status == Domain.Enums.CaseStatus.Dispatched ||
                          c.Status == Domain.Enums.CaseStatus.InTransit ||
                          c.Status == Domain.Enums.CaseStatus.ArrivedAtTriage))
-            .OrderByDescending(c => c.CreatedAt).FirstOrDefaultAsync();
+            .OrderByDescending(c => c.CreatedAt)
+            .Select(c => new
+            {
+                c.IncidentNumber,
+                c.CallerName,
+                c.CallerPhone,
+                c.PatientName,
+                c.IncidentReason,
+                Status = c.Status.ToString(),
+                Priority = c.Priority.ToString(),
+                c.PickupAddress,
+                c.PickupLatitude,
+                c.PickupLongitude,
+                c.CreatedAt,
+                TargetHospital = new
+                {
+                    c.TargetHospital.Id,
+                    c.TargetHospital.Name,
+                    c.TargetHospital.Address,
+                    c.TargetHospital.SubCity,
+                    c.TargetHospital.Latitude,
+                    c.TargetHospital.Longitude
+                },
+                AssignedBed = c.AssignedBed != null ? new
+                {
+                    c.AssignedBed.Id,
+                    c.AssignedBed.BedNumber,
+                    c.AssignedBed.WardType
+                } : null,
+                AssignedBedNumber = c.AssignedBed != null ? c.AssignedBed.BedNumber : null
+            })
+            .FirstOrDefaultAsync();
+
         return Ok(new { ambulance, assignment });
+    }
+
+    [HttpPost("mine/mission-status")]
+    [Authorize(Roles = "AmbulanceDriver")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [EndpointSummary("Update active ambulance mission status (InTransit or ArrivedAtTriage)")]
+    public async Task<IActionResult> UpdateMissionStatus([FromBody] UpdateMissionStatusDto dto)
+    {
+        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var ambulance = await _context.Ambulances.SingleOrDefaultAsync(a => a.DriverUserId == userId);
+        if (ambulance is null) return NotFound(new { message = "No ambulance is linked to this driver account." });
+
+        var activeCase = await _context.EmergencyCases
+            .Where(c => c.AssignedAmbulanceId == ambulance.Id &&
+                        (c.Status == Domain.Enums.CaseStatus.Dispatched ||
+                         c.Status == Domain.Enums.CaseStatus.InTransit ||
+                         c.Status == Domain.Enums.CaseStatus.ArrivedAtTriage))
+            .OrderByDescending(c => c.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        if (activeCase is null) return NotFound(new { message = "No active emergency mission assigned." });
+
+        if (dto.Status == Domain.Enums.CaseStatus.InTransit || dto.Status == Domain.Enums.CaseStatus.ArrivedAtTriage)
+        {
+            activeCase.Status = dto.Status;
+            await _context.SaveChangesAsync();
+
+            await _emergencyHub.Clients.Group($"Hospital_{activeCase.TargetHospitalId}").SendAsync("QueueUpdated");
+            await _emergencyHub.Clients.All.SendAsync("QueueUpdated");
+
+            return Ok(new { message = $"Mission status updated to {dto.Status}", status = dto.Status.ToString() });
+        }
+
+        return BadRequest(new { message = "Ambulance driver can only transition status to InTransit or ArrivedAtTriage." });
     }
 
     [HttpPost("mine/location")]
@@ -209,6 +284,8 @@ public class AmbulancesController : ControllerBase
     public async Task<IActionResult> GetLocations(Guid ambulanceId) => Ok(await _context.AmbulanceLocations.Where(l => l.AmbulanceId == ambulanceId).OrderByDescending(l => l.RecordedAt).Take(100).ToListAsync());
 
 }
+
+public record UpdateMissionStatusDto(Domain.Enums.CaseStatus Status);
 
 public record CreateAmbulanceDto(
     string PlateNumber,

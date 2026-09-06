@@ -1,4 +1,4 @@
-using AddisMedConnect.Application.DTOs;
+﻿using AddisMedConnect.Application.DTOs;
 using AddisMedConnect.Domain.Entities;
 using AddisMedConnect.Domain.Enums;
 
@@ -21,4 +21,5 @@ public interface IEmergencyService
     Task<IEnumerable<HospitalRecommendationDto>> FindRecommendedHospitalsAsync(string wardType, double latitude, double longitude);
     Task<List<Ambulance>> GetAvailableAmbulancesAsync();
     Task<EmergencyCaseDto> AssignResourcesAsync(string incidentNumber, Guid bedId, Guid ambulanceId);
+    Task<IEnumerable<RecommendedAmbulanceDto>> GetRecommendedAmbulancesAsync(string incidentNumber);
 }
