@@ -260,6 +260,3 @@ public class EmergencyCasesController : ControllerBase
         }
     }
 }
-
-public record UpdateCaseStatusDto(CaseStatus Status);
-public record AssignResourcesDto(Guid BedId, Guid AmbulanceId);

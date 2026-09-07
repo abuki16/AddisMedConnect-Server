@@ -4,6 +4,7 @@ using AddisMedConnect.Domain.Entities;
 using AddisMedConnect.Domain.Enums;
 using AddisMedConnect.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Hybrid;
 
 namespace AddisMedConnect.Infrastructure.Services;
 
@@ -11,30 +12,38 @@ public class HospitalService : IHospitalService
 {
     private readonly AddisDbContext _context;
     private readonly IBedNotificationService _notificationService;
+    private readonly HybridCache _cache;
 
-    public HospitalService(AddisDbContext context, IBedNotificationService notificationService)
+    public HospitalService(AddisDbContext context, IBedNotificationService notificationService, HybridCache cache)
     {
         _context = context;
         _notificationService = notificationService;
+        _cache = cache;
     }
 
     public async Task<IEnumerable<HospitalDto>> GetAllHospitalsAsync()
     {
-        return await _context.Hospitals
-            .OrderBy(h => h.Name)
-            .Select(h => new HospitalDto(
-                h.Id,
-                h.Code,
-                h.Name,
-                h.SubCity,
-                h.Address,
-                h.Latitude,
-                h.Longitude,
-                h.ContactPhone,
-                h.Beds.Count,
-                h.Beds.Count(b => b.Status == BedStatus.Available)
-            ))
-            .ToListAsync();
+        return await _cache.GetOrCreateAsync(
+            "hospitals_all",
+            async cancellationToken =>
+            {
+                return await _context.Hospitals
+                    .OrderBy(h => h.Name)
+                    .Select(h => new HospitalDto(
+                        h.Id,
+                        h.Code,
+                        h.Name,
+                        h.SubCity,
+                        h.Address,
+                        h.Latitude,
+                        h.Longitude,
+                        h.ContactPhone,
+                        h.Beds.Count,
+                        h.Beds.Count(b => b.Status == BedStatus.Available)
+                    ))
+                    .ToListAsync(cancellationToken);
+            }
+        );
     }
 
     public async Task<HospitalDto?> GetHospitalByIdAsync(Guid id)
@@ -88,6 +97,7 @@ public class HospitalService : IHospitalService
 
         _context.Hospitals.Add(hospital);
         await _context.SaveChangesAsync();
+        await _cache.RemoveAsync("hospitals_all");
 
         return new HospitalDto(
             hospital.Id,
@@ -134,6 +144,7 @@ public class HospitalService : IHospitalService
         hospital.ContactPhone = dto.ContactPhone.Trim();
 
         await _context.SaveChangesAsync();
+        await _cache.RemoveAsync("hospitals_all");
 
         return new HospitalDto(
             hospital.Id,
@@ -196,6 +207,7 @@ public class HospitalService : IHospitalService
         // 6. Remove the hospital
         _context.Hospitals.Remove(hospital);
         await _context.SaveChangesAsync();
+        await _cache.RemoveAsync("hospitals_all");
 
         return true;
     }

@@ -66,3 +66,16 @@ public class UpdateUserDto
 
     public string? NewPassword { get; set; }
 }
+
+public class AuthLoginResult
+{
+    public bool IsSuccess { get; set; }
+    public LoginResponseDto? Response { get; set; }
+    public bool IsLocked { get; set; }
+    public DateTime? LockoutEnd { get; set; }
+    public int LockoutTier { get; set; }
+    public int RetryAfterSeconds { get; set; }
+    public string? ErrorMessage { get; set; }
+    public int? RemainingTrials { get; set; }
+}
+

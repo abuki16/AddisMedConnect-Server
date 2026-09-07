@@ -140,5 +140,3 @@ public class BedsController : ControllerBase
         }
     }
 }
-
-public record UpdateBedStatusDto(int Status);
